@@ -18,6 +18,10 @@ import augmentations
 from datasets import OneClassDataset
 
 
+fig, axis = plt.subplots(10, 1)
+fig.set_figwidth(10)
+fig.set_figheight(100)
+
 def analysis(model, args):
 
 
@@ -134,13 +138,13 @@ def visual_tsne(model, args, roc):
     dataset = CIFAR10(root='../', train=True, download=True)
     transform = augmentations.TrainTransform()
     # transform = ToTensor()
-    inlier_dataset = OneClassDataset(dataset, one_class_labels=inlier, transform=transform, with_rotation=False, augmentation=False)
-    outlier_dataset = OneClassDataset(dataset, zero_class_labels=outlier, transform=transform, with_rotation=False, augmentation=False)
+    inlier_dataset = OneClassDataset(dataset, one_class_labels=inlier, transform=transform, with_rotation=True, augmentation=False)
+    outlier_dataset = OneClassDataset(dataset, zero_class_labels=outlier, transform=transform, with_rotation=True, augmentation=False)
     train_inlier_dataset = Subset(inlier_dataset, range(0, (int)(.7 * len(inlier_dataset))))
     train_dataset = train_inlier_dataset
     validation_inlier_dataset = Subset(inlier_dataset, range((int)(.7 * len(inlier_dataset)), len(inlier_dataset)))
     validation_dataset = ConcatDataset(
-        [validation_inlier_dataset, Subset(outlier_dataset, range(0, (int)(len(validation_inlier_dataset))))])
+        [validation_inlier_dataset, Subset(outlier_dataset, range(0, (int)(len(validation_inlier_dataset)/4)))])
 
     with torch.no_grad():
         model.eval()
@@ -170,27 +174,34 @@ def visual_tsne(model, args, roc):
         nominal_labels = labels == 1
         anomaly_labels = labels == 0
 
-        fig, ax = plt.subplots()
+        ax = axis[args._class]
 
-        ax.scatter(emb[nominal_labels, 0], emb[nominal_labels, 1], label='normal', c='g', marker='.')
+        # fig, ax = plt.subplots()
+        # fig.set_figwidth(10)
+        # fig.set_figheight(10)
+
+        # ax.scatter(emb[nominal_labels, 0], emb[nominal_labels, 1], label='normal', c='g', marker='.')
+        # ax.scatter(emb[anomaly_labels, 0], emb[anomaly_labels, 1], label='anomaly', c='r', marker='.')
+        # ax.legend()
+
         ax.scatter(emb[anomaly_labels, 0], emb[anomaly_labels, 1], label='anomaly', c='r', marker='.')
+        rot_0_labels = labels == 1
+        ax.scatter(emb[rot_0_labels, 0], emb[rot_0_labels, 1], label='rot 0', c='g', marker='.')
+        rot_90_labels = labels == 2
+        ax.scatter(emb[rot_90_labels, 0], emb[rot_90_labels, 1], label='rot 90', c='k', marker='.')
+        rot_180_labels = labels == 3
+        ax.scatter(emb[rot_180_labels, 0], emb[rot_180_labels, 1], label='rot 180', c='m', marker='.')
+        rot_270_labels = labels == 4
+        ax.scatter(emb[rot_270_labels, 0], emb[rot_270_labels, 1], label='rot 270', c='y', marker='.')
+
         ax.set_title(f'class: {args._class}, roc: {roc}')
         ax.legend()
-
-        # ax =  axis[args._class, 1]
-        # ax.scatter(emb[anomaly_labels, 0], emb[anomaly_labels, 1], label='anomaly', c='r', marker='.')
-        # rot_0_labels = labels == 1
-        # ax.scatter(emb[rot_0_labels, 0], emb[rot_0_labels, 1], label='rot 0', c='g', marker='.')
-        # rot_90_labels = labels == 2
-        # ax.scatter(emb[rot_90_labels, 0], emb[rot_90_labels, 1], label='rot 90', c='k', marker='.')
-        # rot_180_labels = labels == 3
-        # ax.scatter(emb[rot_180_labels, 0], emb[rot_180_labels, 1], label='rot 180', c='m', marker='.')
-        # rot_270_labels = labels == 4
-        # ax.scatter(emb[rot_270_labels, 0], emb[rot_270_labels, 1], label='rot 270', c='y', marker='.')
-        # ax.legend()
 
 
 
         # produce a legend with the unique colors from the scatter
 
-        plt.show()
+        if args._class == 9:
+            plt.show()
+
+        # plt.show()

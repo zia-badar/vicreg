@@ -37,14 +37,50 @@ class OneClassDataset(Dataset):
         self.to_tensor = Compose([ToTensor(), transforms.Normalize( mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225] )])
         self.rotations = [0, 90, 180, 270]
 
+        self.hflip = torchvision.transforms.RandomHorizontalFlip(0.5)
+
+    # def __getitem__(self, item):
+    #
+    #     index = (int)(item / 4) if self.with_rotation else item
+    #     x = self.xs[index]
+    #     l = 1 if self.ls[index] in self.one_class_labels else 0
+    #
+    #     # xs, ys = [], []
+    #     # for _ in range(self.aug_count):
+    #     #     _x, _y = self.transform(x)
+    #     #     xs.append(_x)
+    #     #     ys.append(_y)
+    #     #
+    #     # xs = torch.stack(xs)
+    #     # ys = torch.stack(ys)
+    #
+    #     if self.with_rotation:
+    #         if l == 1:
+    #             l = item % 4 + 1
+    #
+    #     if self.augmentation:
+    #         return self.transform(x, self.rotations[item % 4] if self.with_rotation else 0), l
+    #     else:
+    #         return self.to_tensor(rotate(x, self.rotations[item % 4], interpolation=torchvision.transforms.InterpolationMode.BICUBIC) if self.with_rotation else x), l
+
+    # def __len__(self):
+    #     return 4 * len(self.filtered_indexes) if self.with_rotation else len(self.filtered_indexes)
+
     def __getitem__(self, item):
 
         index = (int)(item/4) if self.with_rotation else item
         x = self.xs[index]
         l = 1 if self.ls[index] in self.one_class_labels else 0
 
+        x1 = self.hflip(x)
+        x2 = self.hflip(x)
+
         if self.with_rotation:
-            x = rotate(x, self.rotations[item%4], interpolation=torchvision.transforms.InterpolationMode.BICUBIC)
+            x1 = rotate(x1, self.rotations[item%4], interpolation=torchvision.transforms.InterpolationMode.BICUBIC)
+            x2 = rotate(x2, self.rotations[item%4], interpolation=torchvision.transforms.InterpolationMode.BICUBIC)
+
+            if not self.augmentation:
+                x = rotate(x, self.rotations[item%4], interpolation=torchvision.transforms.InterpolationMode.BICUBIC)
 
         # xs, ys = [], []
         # for _ in range(self.aug_count):
@@ -59,7 +95,7 @@ class OneClassDataset(Dataset):
             if l == 1:
                 l = item%4 + 1
 
-        return self.transform(x) if self.augmentation else self.to_tensor(x), l
+        return self.transform(x1, x2) if self.augmentation else self.to_tensor(x), l
 
     def __len__(self):
         return 4*len(self.filtered_indexes) if self.with_rotation else len(self.filtered_indexes)

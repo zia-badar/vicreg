@@ -3,12 +3,12 @@
 
 # This source code is licensed under the license found in the
 # LICENSE file in the root directory of this source tree.
-
-
+import torchvision
 from PIL import ImageOps, ImageFilter
 import numpy as np
 import torchvision.transforms as transforms
 from torchvision.transforms import InterpolationMode
+from torchvision.transforms.functional import rotate
 
 
 class GaussianBlur(object):
@@ -41,7 +41,7 @@ class TrainTransform(object):
                 transforms.RandomResizedCrop(
                     32, interpolation=InterpolationMode.BICUBIC
                 ),
-                transforms.RandomHorizontalFlip(p=0.5),
+                # transforms.RandomHorizontalFlip(p=0.5),
                 transforms.RandomApply(
                     [
                         transforms.ColorJitter(
@@ -64,7 +64,7 @@ class TrainTransform(object):
                 transforms.RandomResizedCrop(
                     32, interpolation=InterpolationMode.BICUBIC
                 ),
-                transforms.RandomHorizontalFlip(p=0.5),
+                # transforms.RandomHorizontalFlip(p=0.5),
                 transforms.RandomApply(
                     [
                         transforms.ColorJitter(
@@ -83,7 +83,14 @@ class TrainTransform(object):
             ]
         )
 
-    def __call__(self, sample):
-        x1 = self.transform(sample)
-        x2 = self.transform_prime(sample)
+        self.hflip = transforms.RandomHorizontalFlip(0.5)
+
+    # def __call__(self, sample, rot):
+    #     x1 = self.transform(rotate(self.hflip(sample), rot, interpolation=torchvision.transforms.InterpolationMode.BICUBIC))
+    #     x2 = self.transform_prime(rotate(self.hflip(sample), rot, interpolation=torchvision.transforms.InterpolationMode.BICUBIC))
+    #     return x1, x2
+
+    def __call__(self, sample1, sample2):
+        x1 = self.transform(sample1)
+        x2 = self.transform_prime(sample2)
         return x1, x2

@@ -18,7 +18,7 @@ import torch.nn.functional as F
 from torch import nn, optim
 import torch.distributed as dist
 import torchvision.datasets as datasets
-from torch.nn import BatchNorm1d, Linear
+from torch.nn import BatchNorm1d, Linear, ReLU, CrossEntropyLoss
 from torch.utils.data import Subset, ConcatDataset, DataLoader
 from torchvision.datasets import CIFAR10
 from tqdm import tqdm
@@ -133,7 +133,7 @@ def main(args):
         lars_adaptation_filter=exclude_bias_and_norm,
     )
 
-    # model.load_state_dict(torch.load(f'exp with same branches with rot 76/resnet50_{args._class}.pth'))
+    # model.load_state_dict(torch.load(f'exp_with_hflip_before_rot_newest/resnet50_{args._class}.pth'))
     # roc = analysis(model, args)
     # return roc
 
@@ -168,7 +168,7 @@ def main(args):
     scaler = torch.cuda.amp.GradScaler()
     for epoch in tqdm(range(start_epoch, args.epochs)):
         # sampler.set_epoch(epoch)
-        for step, ((x, y), _) in enumerate(loader, start=epoch * len(loader)):
+        for step, ((x, y), l) in enumerate(loader, start=epoch * len(loader)):
             # x = x.cuda(gpu, non_blocking=True)
             # y = y.cuda(gpu, non_blocking=True)
             x = x.cuda(non_blocking=True)
@@ -178,7 +178,8 @@ def main(args):
 
             optimizer.zero_grad()
             with torch.cuda.amp.autocast():
-                loss = model.forward(x, y)
+                loss = model.forward(x, y, l)
+
             scaler.scale(loss).backward()
             scaler.step(optimizer)
             scaler.update()
@@ -251,11 +252,17 @@ class VICReg(nn.Module):
 
         self.projector_1 = Projector(args, self.embedding)
 
+        self.classifier = nn.Sequential(Linear(512, 4), BatchNorm1d(4), ReLU())
+
+        self.cross_entropy_loss = CrossEntropyLoss()
+
         # self.projector_2 = Projector(args, self.embedding)
 
-    def forward(self, x, y):
+    def forward(self, x, y, l):
         x = self.projector_1(self.backbone_1(x))
         y = self.projector_1(self.backbone_1(y))
+        l = F.one_hot(l-1).cuda().to(torch.float)
+        rot_loss = (self.cross_entropy_loss(self.classifier(x), l) + self.cross_entropy_loss(self.classifier(y), l))/2
 
         repr_loss = F.mse_loss(x, y)
 
@@ -283,12 +290,13 @@ class VICReg(nn.Module):
         cov_loss = off_diagonal(cov_x).pow_(2).sum().div(
             self.num_features
         ) + off_diagonal(cov_y).pow_(2).sum().div(self.num_features)
-        # print(f'{self.args.sim_coeff * repr_loss} , {self.args.std_coeff * std_loss} , {self.args.cov_coeff * cov_loss}, {repr_loss_2}')
+        # print(f'{self.args.sim_coeff * repr_loss} , {self.args.std_coeff * std_loss} , {self.args.cov_coeff * cov_loss}, {rot_loss}')
 
         loss = (
             self.args.sim_coeff * repr_loss
             + self.args.std_coeff * std_loss
             + self.args.cov_coeff * cov_loss
+            + rot_loss
         )
         return loss
 
