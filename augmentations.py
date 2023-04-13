@@ -51,12 +51,12 @@ class TrainTransform(object):
                     p=0.8,
                 ),
                 transforms.RandomGrayscale(p=0.2),
-                GaussianBlur(p=1.0),
-                Solarization(p=0.0),
+                # GaussianBlur(p=1.0),
+                # Solarization(p=0.0),
                 transforms.ToTensor(),
-                transforms.Normalize(
-                    mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
-                ),
+                # transforms.Normalize(
+                #     mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
+                # ),
             ]
         )
         self.transform_prime = transforms.Compose(
@@ -74,12 +74,12 @@ class TrainTransform(object):
                     p=0.8,
                 ),
                 transforms.RandomGrayscale(p=0.2),
-                GaussianBlur(p=0.1),
-                Solarization(p=0.2),
-                transforms.ToTensor(),
-                transforms.Normalize(
-                    mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
-                ),
+                # GaussianBlur(p=0.1),
+                # Solarization(p=0.2),
+                transforms.ToTensor()
+                # transforms.Normalize(
+                #     mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
+                # ),
             ]
         )
 

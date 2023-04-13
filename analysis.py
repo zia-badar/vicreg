@@ -9,38 +9,51 @@ from sklearn.metrics import roc_auc_score
 from sklearn.svm import OneClassSVM
 from torch import cdist
 from torch.nn.functional import normalize
-from torch.utils.data import Subset, ConcatDataset
+from torch.utils.data import Subset, ConcatDataset, DataLoader
 from torchvision.datasets import CIFAR10
 from torchvision.transforms import transforms, ToTensor
 from tsne_torch import TorchTSNE
 
 import augmentations
+from dataset2 import OneClassDataset2
 from datasets import OneClassDataset
 
 
-fig, axis = plt.subplots(10, 1)
-fig.set_figwidth(10)
-fig.set_figheight(100)
+# fig, axis = plt.subplots(10, 1)
+# fig.set_figwidth(10)
+# fig.set_figheight(100)
 
 def analysis(model, args):
-
-
     aug = 10
-    inlier = [args._class]
-    outlier = list(range(10))
-    outlier.remove(args._class)
-    dataset = CIFAR10(root='../', train=True, download=True)
-    transform = augmentations.TrainTransform()
-    # transform = ToTensor()
-    inlier_dataset = OneClassDataset(dataset, one_class_labels=inlier, transform=transform, with_rotation=False, augmentation=False)
-    outlier_dataset = OneClassDataset(dataset, zero_class_labels=outlier, transform=transform, with_rotation=False, augmentation=False)
-    train_inlier_dataset = Subset(inlier_dataset, range(0, (int)(.7 * len(inlier_dataset))))
-    train_dataset = train_inlier_dataset
-    validation_inlier_dataset = Subset(inlier_dataset, range((int)(.7 * len(inlier_dataset)), len(inlier_dataset)))
+    # inlier = [args._class]
+    # outlier = list(range(10))
+    # outlier.remove(args._class)
+    # dataset = CIFAR10(root='../', train=True, download=True)
+    # transform = augmentations.TrainTransform()
+    # # transform = ToTensor()
+    # inlier_dataset = OneClassDataset(dataset, one_class_labels=inlier, transform=transform, with_rotation=False, augmentation=False)
+    # outlier_dataset = OneClassDataset(dataset, zero_class_labels=outlier, transform=transform, with_rotation=False, augmentation=False)
+    # train_inlier_dataset = Subset(inlier_dataset, range(0, (int)(.7 * len(inlier_dataset))))
+    # train_dataset = train_inlier_dataset
+    # validation_inlier_dataset = Subset(inlier_dataset, range((int)(.7 * len(inlier_dataset)), len(inlier_dataset)))
+    # validation_dataset = ConcatDataset([validation_inlier_dataset, outlier_dataset])
+
+
+    inlier_dataset = OneClassDataset2(CIFAR10(root='../', train=True), one_class_labels=[args._class])
+    train_dataset = Subset(inlier_dataset, range(0, (int)(0.7*len(inlier_dataset))))
+
+    validation_inlier_dataset = Subset(inlier_dataset, range((int)(0.7*len(inlier_dataset)), len(inlier_dataset)))
+    outlier_classes = list(range(10))
+    outlier_classes.remove(args._class)
+    outlier_dataset = OneClassDataset2(CIFAR10(root='../', train=True), zero_class_labels=outlier_classes)
     validation_dataset = ConcatDataset([validation_inlier_dataset, outlier_dataset])
+    # validation_dataset = AugmentedDataset2(validation_dataset, pair=False)
+    # without_pair_train_dataset = AugmentedDataset2(train_dataset, pair=False)
+    # train_dataset = AugmentedDataset(train_dataset)
+    # train_dataset = train_dataset
 
     with torch.no_grad():
-        model.eval()
+        model.backbone_1.eval()
 
         training_dataloader = torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size, num_workers=args.num_workers, pin_memory=True)
         validation_dataloader = torch.utils.data.DataLoader(validation_dataset, batch_size=args.batch_size, num_workers=args.num_workers, pin_memory=True)
@@ -49,22 +62,22 @@ def analysis(model, args):
         with torch.no_grad():
             for x, l in training_dataloader:
                 x = x.cuda()
-                x = model.backbone_1(x)
-                # train_x.append(normalize(x, dim=1))
-                train_x.append(x)
+                x, _ = model.backbone_1(x)
+                train_x.append(normalize(x, dim=1))
+                # train_x.append(x)
         train_x = torch.cat(train_x)
-        # gamma = (0.1 / (torch.var(train_x).item() * train_x.shape[1]))
-        # svm = OneClassSVM(kernel='rbf', gamma=gamma).fit(train_x.cpu().numpy())
-        svm = OneClassSVM(kernel='linear').fit(train_x.cpu().numpy())
+        gamma = (10 / (torch.var(train_x).item() * train_x.shape[1]))
+        svm = OneClassSVM(kernel='rbf', gamma=gamma).fit(train_x.cpu().numpy())
+        # svm = OneClassSVM(kernel='linear').fit(train_x.cpu().numpy())
 
         val_x = []
         labels = []
         with torch.no_grad():
             for x, l in validation_dataloader:
                 x = x.cuda()
-                x = model.backbone_1(x)
-                # val_x.append(normalize(x, dim=1))
-                val_x.append(x)
+                x, _ = model.backbone_1(x)
+                val_x.append(normalize(x, dim=1))
+                # val_x.append(x)
                 labels.append(l)
         val_x = torch.cat(val_x).cpu().numpy()
         labels = torch.cat(labels).cpu().numpy()
@@ -158,7 +171,7 @@ def visual_tsne(model, args, roc):
         labels = []
         for x, l in validation_dataloader:
             x = x.cuda()
-            samples.append(model.backbone_1(x))
+            samples.append(model.backbone_1(x)[0])
             labels.append(l)
 
         samples = torch.cat(samples).cpu()
@@ -174,11 +187,11 @@ def visual_tsne(model, args, roc):
         nominal_labels = labels == 1
         anomaly_labels = labels == 0
 
-        ax = axis[args._class]
+        # ax = axis[args._class]
 
-        # fig, ax = plt.subplots()
-        # fig.set_figwidth(10)
-        # fig.set_figheight(10)
+        fig, ax = plt.subplots()
+        fig.set_figwidth(10)
+        fig.set_figheight(10)
 
         # ax.scatter(emb[nominal_labels, 0], emb[nominal_labels, 1], label='normal', c='g', marker='.')
         # ax.scatter(emb[anomaly_labels, 0], emb[anomaly_labels, 1], label='anomaly', c='r', marker='.')
@@ -194,14 +207,14 @@ def visual_tsne(model, args, roc):
         rot_270_labels = labels == 4
         ax.scatter(emb[rot_270_labels, 0], emb[rot_270_labels, 1], label='rot 270', c='y', marker='.')
 
-        ax.set_title(f'class: {args._class}, roc: {roc}')
+        ax.set_title(f'class: {dataset.classes[args._class]}, roc: {roc}')
         ax.legend()
 
 
 
         # produce a legend with the unique colors from the scatter
 
-        if args._class == 9:
-            plt.show()
+        # if args._class == 2:
+        #     plt.show()
 
-        # plt.show()
+        plt.show()

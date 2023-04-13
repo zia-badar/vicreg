@@ -18,13 +18,19 @@ import torch.nn.functional as F
 from torch import nn, optim
 import torch.distributed as dist
 import torchvision.datasets as datasets
-from torch.nn import BatchNorm1d, Linear, ReLU, CrossEntropyLoss
+from torch.nn import BatchNorm1d, Linear, ReLU, CrossEntropyLoss, BCEWithLogitsLoss
+from torch.optim import SGD
+from torch.optim.lr_scheduler import CosineAnnealingLR, _LRScheduler, ReduceLROnPlateau
 from torch.utils.data import Subset, ConcatDataset, DataLoader
+from torchlars import LARS
 from torchvision.datasets import CIFAR10
+from torch.nn.functional import normalize
+from torchvision.models import resnet18
 from tqdm import tqdm
 
 import augmentations as aug
 from analysis import analysis
+from dataset2 import OneClassDataset2, AugmentedDataset2
 from datasets import OneClassDataset
 from distributed import init_distributed_mode
 
@@ -51,7 +57,7 @@ def get_arguments():
                         help='Size and number of layers of the MLP expander head')
 
     # Optim
-    parser.add_argument("--epochs", type=int, default=250,
+    parser.add_argument("--epochs", type=int, default=256,
                         help='Number of epochs')
     parser.add_argument("--batch-size", type=int, default=256,
                         help='Effective batch size (per worker batch size is [batch-size] / world-size)')
@@ -85,8 +91,102 @@ def get_arguments():
     return parser
 
 
+class GradualWarmupScheduler(_LRScheduler):
+    """ Gradually warm-up(increasing) learning rate in optimizer.
+    Proposed in 'Accurate, Large Minibatch SGD: Training ImageNet in 1 Hour'.
+
+    Args:
+        optimizer (Optimizer): Wrapped optimizer.
+        multiplier: target learning rate = base lr * multiplier if multiplier > 1.0. if multiplier = 1.0, lr starts from 0 and ends up with the base_lr.
+        total_epoch: target learning rate is reached at total_epoch, gradually
+        after_scheduler: after target_epoch, use this scheduler(eg. ReduceLROnPlateau)
+    """
+
+    def __init__(self, optimizer, multiplier, total_epoch, after_scheduler=None):
+        self.multiplier = multiplier
+        if self.multiplier < 1.:
+            raise ValueError('multiplier should be greater thant or equal to 1.')
+        self.total_epoch = total_epoch
+        self.after_scheduler = after_scheduler
+        self.finished = False
+        super(GradualWarmupScheduler, self).__init__(optimizer)
+
+    def get_lr(self):
+        if self.last_epoch > self.total_epoch:
+            if self.after_scheduler:
+                if not self.finished:
+                    self.after_scheduler.base_lrs = [base_lr * self.multiplier for base_lr in self.base_lrs]
+                    self.finished = True
+                return self.after_scheduler.get_lr()
+            return [base_lr * self.multiplier for base_lr in self.base_lrs]
+
+        if self.multiplier == 1.0:
+            return [base_lr * (float(self.last_epoch) / self.total_epoch) for base_lr in self.base_lrs]
+        else:
+            return [base_lr * ((self.multiplier - 1.) * self.last_epoch / self.total_epoch + 1.) for base_lr in self.base_lrs]
+
+    def step_ReduceLROnPlateau(self, metrics, epoch=None):
+        if epoch is None:
+            epoch = self.last_epoch + 1
+        self.last_epoch = epoch if epoch != 0 else 1  # ReduceLROnPlateau is called at the end of epoch, whereas others are called at beginning
+        if self.last_epoch <= self.total_epoch:
+            warmup_lr = [base_lr * ((self.multiplier - 1.) * self.last_epoch / self.total_epoch + 1.) for base_lr in self.base_lrs]
+            for param_group, lr in zip(self.optimizer.param_groups, warmup_lr):
+                param_group['lr'] = lr
+        else:
+            if epoch is None:
+                self.after_scheduler.step(metrics, None)
+            else:
+                self.after_scheduler.step(metrics, epoch - self.total_epoch)
+
+    def step(self, epoch=None, metrics=None):
+        if type(self.after_scheduler) != ReduceLROnPlateau:
+            if self.finished and self.after_scheduler:
+                if epoch is None:
+                    self.after_scheduler.step(None)
+                else:
+                    self.after_scheduler.step(epoch - self.total_epoch)
+            else:
+                return super(GradualWarmupScheduler, self).step(epoch)
+        else:
+            self.step_ReduceLROnPlateau(metrics, epoch)
+
+
+class Model(nn.Module):
+    def __init__(self, feature_dim=128):
+        super(Model, self).__init__()
+
+        self.f = []
+        for name, module in resnet18().named_children():
+            if name == 'conv1':
+                module = nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1, bias=False)
+            if not isinstance(module, nn.Linear) and not isinstance(module, nn.MaxPool2d):
+                self.f.append(module)
+        # encoder
+        self.f = nn.Sequential(*self.f)
+        # projection head
+        # self.g = nn.Sequential(
+        #                        nn.Linear(512, 512, bias=False),
+        #                        nn.BatchNorm1d(512),
+        #                        nn.ReLU(inplace=True),
+        #                        nn.Linear(512, feature_dim),
+        #                        )
+
+        layers = []
+        for _ in range(8):
+            layers += [nn.Linear(512, 512, bias=False), nn.BatchNorm1d(512), nn.ReLU(inplace=True)]
+        layers.append(nn.Linear(512, 128))
+        self.g = nn.Sequential(*layers)
+
+    def forward(self, x):
+        x = self.f(x)
+        feature = torch.flatten(x, start_dim=1)
+        out = self.g(feature)
+        return feature, out
+
+
 def main(args):
-    torch.backends.cudnn.benchmark = True
+    # torch.backends.cudnn.benchmark = True
     # init_distributed_mode(args)
     # print(args)
     # gpu = torch.device(args.device)
@@ -122,18 +222,23 @@ def main(args):
 
     # model = VICReg(args).cuda(gpu)
     model = VICReg(args).cuda()
-    model.train()
+    model.backbone_1.train()
     # model = nn.SyncBatchNorm.convert_sync_batchnorm(model)
     # model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[gpu])
-    optimizer = LARS(
-        model.parameters(),
-        lr=0,
-        weight_decay=args.wd,
-        weight_decay_filter=exclude_bias_and_norm,
-        lars_adaptation_filter=exclude_bias_and_norm,
-    )
+    # optimizer = LARS(
+    #     model.parameters(),
+    #     lr=0,
+    #     weight_decay=args.wd,
+    #     weight_decay_filter=exclude_bias_and_norm,
+    #     lars_adaptation_filter=exclude_bias_and_norm,
+    # )
 
-    # model.load_state_dict(torch.load(f'exp_with_hflip_before_rot_newest/resnet50_{args._class}.pth'))
+    base_optimizer = SGD(model.parameters(), lr=1e-1, momentum=0.9, weight_decay=1e-6)
+    optim = LARS(base_optimizer, eps=1e-8, trust_coef=0.001)
+    scheduler = CosineAnnealingLR(optim, args.epochs)
+    scheduler_warmup = GradualWarmupScheduler(optim, multiplier=10.0, total_epoch=10, after_scheduler=scheduler)
+
+    # model.load_state_dict(torch.load(f'exp/resnet50_{args._class}.pth'))
     # roc = analysis(model, args)
     # return roc
 
@@ -159,48 +264,76 @@ def main(args):
     validation_inlier_dataset = Subset(inlier_dataset, range((int)(.7 * len(inlier_dataset)), len(inlier_dataset)))
     validation_dataset = ConcatDataset([validation_inlier_dataset, outlier_dataset])
 
+
+    # inlier_dataset = OneClassDataset2(CIFAR10(root='../', train=True), one_class_labels=[args._class])
+    # train_dataset = Subset(inlier_dataset, range(0, (int)(0.7*len(inlier_dataset))))
+    #
+    # validation_inlier_dataset = Subset(inlier_dataset, range((int)(0.7*len(inlier_dataset)), len(inlier_dataset)))
+    # outlier_classes = list(range(10))
+    # outlier_classes.remove(args._class)
+    # outlier_dataset = OneClassDataset2(CIFAR10(root='../', train=True), zero_class_labels=outlier_classes)
+    # validation_dataset = ConcatDataset([validation_inlier_dataset, outlier_dataset])
+    # validation_dataset = AugmentedDataset2(validation_dataset, pair=False)
+    # without_pair_train_dataset = AugmentedDataset2(train_dataset, pair=False)
+    # # train_dataset = AugmentedDataset(train_dataset)
+    # train_dataset = AugmentedDataset2(train_dataset, aug=True)
+    # train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=20, pin_memory=True)
+    # loader = train_dataloader
+
     loader = DataLoader(train_dataset, batch_size=args.batch_size, num_workers=args.num_workers, shuffle=True, pin_memory=True)
 
+    start_epoch = 1
 
-    start_epoch = 0
-
-    start_time = last_logging = time.time()
-    scaler = torch.cuda.amp.GradScaler()
-    for epoch in tqdm(range(start_epoch, args.epochs)):
+    # start_time = last_logging = time.time()
+    # scaler = torch.cuda.amp.GradScaler()
+    for epoch in tqdm(range(start_epoch, args.epochs+1)):
         # sampler.set_epoch(epoch)
-        for step, ((x, y), l) in enumerate(loader, start=epoch * len(loader)):
+        total_loss = 0
+        for step, ((x, y), l) in enumerate(loader):
             # x = x.cuda(gpu, non_blocking=True)
             # y = y.cuda(gpu, non_blocking=True)
             x = x.cuda(non_blocking=True)
             y = y.cuda(non_blocking=True)
 
-            lr = adjust_learning_rate(args, optimizer, loader, step)
+            # lr = adjust_learning_rate(args, optimizer, loader, step)
 
-            optimizer.zero_grad()
-            with torch.cuda.amp.autocast():
-                loss = model.forward(x, y, l)
+            optim.zero_grad()
+            # with torch.cuda.amp.autocast():
+            #     loss = model.forward(x, y, l)
 
-            scaler.scale(loss).backward()
-            scaler.step(optimizer)
-            scaler.update()
+            _, z = model.backbone_1(x)
+            _, z_aug = model.backbone_1(y)
+
+            loss = contrastive_loss(z, z_aug)
+
+            loss.backward()
+
+            # scaler.scale(loss).backward()
+            # scaler.step(optimizer)
+            # scaler.update()
+            optim.step()
+            scheduler_warmup.step(epoch - 1 + step / len(loader))
 
             current_time = time.time()
-            if args.rank == 0 and current_time - last_logging > args.log_freq_time:
-                stats = dict(
-                    epoch=epoch,
-                    step=step,
-                    loss=loss.item(),
-                    time=int(current_time - start_time),
-                    lr=lr,
-                )
-                print(json.dumps(stats))
-                print(json.dumps(stats), file=stats_file)
-                last_logging = current_time
+            # if args.rank == 0 and current_time - last_logging > args.log_freq_time:
+            #     stats = dict(
+            #         epoch=epoch,
+            #         step=step,
+            #         loss=loss.item(),
+            #         # time=int(current_time - start_time),
+            #         lr=1,
+            #     )
+            #     # print(json.dumps(stats))
+            #     # print(json.dumps(stats), file=stats_file)
+            #     last_logging = current_time
+            total_loss += loss.item()
+
+        print(f'loss: {total_loss/len(loader): .2f}, epoch: {epoch}')
         if args.rank == 0:
             state = dict(
                 epoch=epoch + 1,
                 model=model.state_dict(),
-                optimizer=optimizer.state_dict(),
+                # optimizer=optimizer.state_dict(),
             )
             torch.save(state, args.exp_dir / "model.pth")
     if args.rank == 0:
@@ -229,42 +362,77 @@ def adjust_learning_rate(args, optimizer, loader, step):
         param_group["lr"] = lr
     return lr
 
+def contrastive_loss(z, z_aug):
+    z = normalize(z, dim=1)
+    z_aug = normalize(z_aug, dim=1)
+
+    batch_size = z.shape[0]
+    temperature = 0.5
+
+    # simclr
+    pos = torch.exp((z[:, None, :] @ z_aug[:, :, None]).squeeze()/temperature)
+    mask = torch.cat([torch.logical_not(torch.eye(batch_size).cuda()), torch.logical_not(torch.eye(batch_size).cuda())])
+    neg = torch.sum(torch.masked_select(torch.exp((z @ torch.cat([z, z_aug]).T) / temperature), mask.T).view(batch_size, 2*batch_size-2), dim=1)
+    l = -torch.mean(torch.log(pos/(pos + neg)))
+
+    return l
 
 class VICReg(nn.Module):
     def __init__(self, args):
         super().__init__()
         self.args = args
         self.num_features = int(args.mlp.split("-")[-1])
-        self.backbone_1, self.embedding = resnet.__dict__[args.arch](
-            zero_init_residual=True
-        )
-        self.backbone_2, self.embedding = resnet.__dict__[args.arch](
-            zero_init_residual=True
-        )
-        self.embedding = 32
-        self.backbone_1.conv1 = nn.Conv2d(3, 64, kernel_size=(3, 3), stride=1)
-        self.backbone_1.maxpool = nn.Identity()
-        self.backbone_1 = nn.Sequential(self.backbone_1, BatchNorm1d(512), Linear(512, 32))
+        self.backbone_1 = Model().cuda()
+        # self.backbone_1, self.embedding = resnet.__dict__[args.arch](
+        #     zero_init_residual=True
+        # )
+        # self.backbone_2, self.embedding = resnet.__dict__[args.arch](
+        #     zero_init_residual=True
+        # )
+        # self.embedding = 32
+        # self.backbone_1.conv1 = nn.Conv2d(3, 64, kernel_size=(3, 3), stride=1)
+        # self.backbone_1.maxpool = nn.Identity()
+        # self.backbone_1 = nn.Sequential(self.backbone_1, BatchNorm1d(512), Linear(512, 32))
 
         # self.backbone_2.conv1 = nn.Conv2d(3, 64, kernel_size=(3, 3), stride=1)
         # self.backbone_2.maxpool = nn.Identity()
         # self.backbone_2 = nn.Sequential(self.backbone_2, BatchNorm1d(512), Linear(512, 32))
 
-        self.projector_1 = Projector(args, self.embedding)
-
-        self.classifier = nn.Sequential(Linear(512, 4), BatchNorm1d(4), ReLU())
-
-        self.cross_entropy_loss = CrossEntropyLoss()
-
+        # self.projector_1 = Projector(args, self.embedding)
+        # #
+        # self.classifier = nn.Sequential(Linear(512, 4), BatchNorm1d(4), ReLU())
+        # #
+        # self.cross_entropy_loss = CrossEntropyLoss()
+        # #
+        # self.classifier_aug = nn.Sequential(Linear(1024, 1))
+        # #
+        # self.labels = torch.tensor([1, 0]).repeat(256).type(torch.float).cuda()
+        # #
+        # self.bce_loss = BCEWithLogitsLoss()
+        #
         # self.projector_2 = Projector(args, self.embedding)
 
-    def forward(self, x, y, l):
-        x = self.projector_1(self.backbone_1(x))
-        y = self.projector_1(self.backbone_1(y))
-        l = F.one_hot(l-1).cuda().to(torch.float)
-        rot_loss = (self.cross_entropy_loss(self.classifier(x), l) + self.cross_entropy_loss(self.classifier(y), l))/2
+    def classifying_aug_loss(self, a, b):
+        batch_size = a.shape[0]
+        labels = torch.tensor([1, 0]).repeat(batch_size).type(torch.float).cuda()
+        b_sft = torch.cat([b[1:], b[0][None]])
+        tmp_1 = torch.reshape(torch.permute(torch.stack((a, b, a, b_sft)), (1, 0, 2)), (batch_size, 2, 1024))
+        tmp_2 = self.classifier_aug(tmp_1)
+        return self.bce_loss(tmp_2.reshape(batch_size*2, 1), labels[:, None])
 
-        repr_loss = F.mse_loss(x, y)
+    def forward(self, x, y, l):
+        _, repr_x = self.backbone_1(x)
+        _, repr_y = self.backbone_1(y)
+        # x = self.projector_1(repr_x)
+        # y = self.projector_1(repr_y)
+        # l = F.one_hot(l-1).cuda().to(torch.float)
+        # rot_loss = (self.cross_entropy_loss(self.classifier(x), l) + self.cross_entropy_loss(self.classifier(y), l))/2
+
+        # class_aug_loss = self.classifying_aug_loss(x, y)
+
+        contras_loss = contrastive_loss(repr_x, repr_y)
+
+        # repr_loss = F.mse_loss(x, y)
 
         # dist = torch.cdist(x, y) ** 2
         # num = torch.sum(torch.diag(dist)) / (torch.prod(torch.tensor(x.shape)))     # same as mse_loss
@@ -278,25 +446,27 @@ class VICReg(nn.Module):
 
         # x = torch.cat(FullGatherLayer.apply(x), dim=0)
         # y = torch.cat(FullGatherLayer.apply(y), dim=0)
-        x = x - x.mean(dim=0)
-        y = y - y.mean(dim=0)
-
-        std_x = torch.sqrt(x.var(dim=0) + 0.0001)
-        std_y = torch.sqrt(y.var(dim=0) + 0.0001)
-        std_loss = torch.mean(F.relu(1 - std_x)) / 2 + torch.mean(F.relu(1 - std_y)) / 2
-
-        cov_x = (x.T @ x) / (self.args.batch_size - 1)
-        cov_y = (y.T @ y) / (self.args.batch_size - 1)
-        cov_loss = off_diagonal(cov_x).pow_(2).sum().div(
-            self.num_features
-        ) + off_diagonal(cov_y).pow_(2).sum().div(self.num_features)
-        # print(f'{self.args.sim_coeff * repr_loss} , {self.args.std_coeff * std_loss} , {self.args.cov_coeff * cov_loss}, {rot_loss}')
+        # x = x - x.mean(dim=0)
+        # y = y - y.mean(dim=0)
+        #
+        # std_x = torch.sqrt(x.var(dim=0) + 0.0001)
+        # std_y = torch.sqrt(y.var(dim=0) + 0.0001)
+        # std_loss = torch.mean(F.relu(1 - std_x)) / 2 + torch.mean(F.relu(1 - std_y)) / 2
+        #
+        # cov_x = (x.T @ x) / (self.args.batch_size - 1)
+        # cov_y = (y.T @ y) / (self.args.batch_size - 1)
+        # cov_loss = off_diagonal(cov_x).pow_(2).sum().div(
+        #     self.num_features
+        # ) + off_diagonal(cov_y).pow_(2).sum().div(self.num_features)
+        # # print(f'{self.args.sim_coeff * repr_loss} , {self.args.std_coeff * std_loss} , {self.args.cov_coeff * cov_loss}, {class_aug_loss}')
 
         loss = (
-            self.args.sim_coeff * repr_loss
-            + self.args.std_coeff * std_loss
-            + self.args.cov_coeff * cov_loss
-            + rot_loss
+            # self.args.sim_coeff * repr_loss
+            # + self.args.std_coeff * std_loss
+            # + self.args.cov_coeff * cov_loss
+            # + class_aug_loss
+            # + rot_loss
+            contras_loss
         )
         return loss
 
@@ -323,61 +493,61 @@ def off_diagonal(x):
     return x.flatten()[:-1].view(n - 1, n + 1)[:, 1:].flatten()
 
 
-class LARS(optim.Optimizer):
-    def __init__(
-        self,
-        params,
-        lr,
-        weight_decay=0,
-        momentum=0.9,
-        eta=0.001,
-        weight_decay_filter=None,
-        lars_adaptation_filter=None,
-    ):
-        defaults = dict(
-            lr=lr,
-            weight_decay=weight_decay,
-            momentum=momentum,
-            eta=eta,
-            weight_decay_filter=weight_decay_filter,
-            lars_adaptation_filter=lars_adaptation_filter,
-        )
-        super().__init__(params, defaults)
-
-    @torch.no_grad()
-    def step(self):
-        for g in self.param_groups:
-            for p in g["params"]:
-                dp = p.grad
-
-                if dp is None:
-                    continue
-
-                if g["weight_decay_filter"] is None or not g["weight_decay_filter"](p):
-                    dp = dp.add(p, alpha=g["weight_decay"])
-
-                if g["lars_adaptation_filter"] is None or not g[
-                    "lars_adaptation_filter"
-                ](p):
-                    param_norm = torch.norm(p)
-                    update_norm = torch.norm(dp)
-                    one = torch.ones_like(param_norm)
-                    q = torch.where(
-                        param_norm > 0.0,
-                        torch.where(
-                            update_norm > 0, (g["eta"] * param_norm / update_norm), one
-                        ),
-                        one,
-                    )
-                    dp = dp.mul(q)
-
-                param_state = self.state[p]
-                if "mu" not in param_state:
-                    param_state["mu"] = torch.zeros_like(p)
-                mu = param_state["mu"]
-                mu.mul_(g["momentum"]).add_(dp)
-
-                p.add_(mu, alpha=-g["lr"])
+# class LARS(optim.Optimizer):
+#     def __init__(
+#         self,
+#         params,
+#         lr,
+#         weight_decay=0,
+#         momentum=0.9,
+#         eta=0.001,
+#         weight_decay_filter=None,
+#         lars_adaptation_filter=None,
+#     ):
+#         defaults = dict(
+#             lr=lr,
+#             weight_decay=weight_decay,
+#             momentum=momentum,
+#             eta=eta,
+#             weight_decay_filter=weight_decay_filter,
+#             lars_adaptation_filter=lars_adaptation_filter,
+#         )
+#         super().__init__(params, defaults)
+#
+#     @torch.no_grad()
+#     def step(self):
+#         for g in self.param_groups:
+#             for p in g["params"]:
+#                 dp = p.grad
+#
+#                 if dp is None:
+#                     continue
+#
+#                 if g["weight_decay_filter"] is None or not g["weight_decay_filter"](p):
+#                     dp = dp.add(p, alpha=g["weight_decay"])
+#
+#                 if g["lars_adaptation_filter"] is None or not g[
+#                     "lars_adaptation_filter"
+#                 ](p):
+#                     param_norm = torch.norm(p)
+#                     update_norm = torch.norm(dp)
+#                     one = torch.ones_like(param_norm)
+#                     q = torch.where(
+#                         param_norm > 0.0,
+#                         torch.where(
+#                             update_norm > 0, (g["eta"] * param_norm / update_norm), one
+#                         ),
+#                         one,
+#                     )
+#                     dp = dp.mul(q)
+#
+#                 param_state = self.state[p]
+#                 if "mu" not in param_state:
+#                     param_state["mu"] = torch.zeros_like(p)
+#                 mu = param_state["mu"]
+#                 mu.mul_(g["momentum"]).add_(dp)
+#
+#                 p.add_(mu, alpha=-g["lr"])
 
 
 # def batch_all_gather(x):
@@ -417,10 +587,11 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser('VICReg training script', parents=[get_arguments()])
 
     sum = 0
-    for i in range(10):
-        args = parser.parse_args()
-        args.rank = 0
-        args._class = i
-        sum += main(args)
+    for _ in range(10):
+        for i in range(0, 1):
+            args = parser.parse_args()
+            args.rank = 0
+            args._class = i
+            sum += main(args)
 
     print(f'avg roc: {sum/10.}')

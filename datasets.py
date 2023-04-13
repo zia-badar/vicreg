@@ -34,7 +34,7 @@ class OneClassDataset(Dataset):
         self.ls = torch.tensor(self.ls)
 
         # self.to_tensor = ToTensor()
-        self.to_tensor = Compose([ToTensor(), transforms.Normalize( mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225] )])
+        self.to_tensor = Compose([ToTensor()])
         self.rotations = [0, 90, 180, 270]
 
         self.hflip = torchvision.transforms.RandomHorizontalFlip(0.5)
