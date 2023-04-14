@@ -222,7 +222,7 @@ def main(args):
 
     # model = VICReg(args).cuda(gpu)
     model = VICReg(args).cuda()
-    model.backbone_1.train()
+    model.train()
     # model = nn.SyncBatchNorm.convert_sync_batchnorm(model)
     # model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[gpu])
     # optimizer = LARS(
@@ -238,7 +238,7 @@ def main(args):
     scheduler = CosineAnnealingLR(optim, args.epochs)
     scheduler_warmup = GradualWarmupScheduler(optim, multiplier=10.0, total_epoch=10, after_scheduler=scheduler)
 
-    # model.load_state_dict(torch.load(f'exp/resnet50_{args._class}.pth'))
+    # model.load_state_dict(torch.load(f'contras_256_256/resnet50_{args._class}.pth'))
     # roc = analysis(model, args)
     # return roc
 
@@ -264,22 +264,6 @@ def main(args):
     validation_inlier_dataset = Subset(inlier_dataset, range((int)(.7 * len(inlier_dataset)), len(inlier_dataset)))
     validation_dataset = ConcatDataset([validation_inlier_dataset, outlier_dataset])
 
-
-    # inlier_dataset = OneClassDataset2(CIFAR10(root='../', train=True), one_class_labels=[args._class])
-    # train_dataset = Subset(inlier_dataset, range(0, (int)(0.7*len(inlier_dataset))))
-    #
-    # validation_inlier_dataset = Subset(inlier_dataset, range((int)(0.7*len(inlier_dataset)), len(inlier_dataset)))
-    # outlier_classes = list(range(10))
-    # outlier_classes.remove(args._class)
-    # outlier_dataset = OneClassDataset2(CIFAR10(root='../', train=True), zero_class_labels=outlier_classes)
-    # validation_dataset = ConcatDataset([validation_inlier_dataset, outlier_dataset])
-    # validation_dataset = AugmentedDataset2(validation_dataset, pair=False)
-    # without_pair_train_dataset = AugmentedDataset2(train_dataset, pair=False)
-    # # train_dataset = AugmentedDataset(train_dataset)
-    # train_dataset = AugmentedDataset2(train_dataset, aug=True)
-    # train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=20, pin_memory=True)
-    # loader = train_dataloader
-
     loader = DataLoader(train_dataset, batch_size=args.batch_size, num_workers=args.num_workers, shuffle=True, pin_memory=True)
 
     start_epoch = 1
@@ -301,10 +285,7 @@ def main(args):
             # with torch.cuda.amp.autocast():
             #     loss = model.forward(x, y, l)
 
-            _, z = model.backbone_1(x)
-            _, z_aug = model.backbone_1(y)
-
-            loss = contrastive_loss(z, z_aug)
+            loss = model.forward(x, y, l)
 
             loss.backward()
 
@@ -587,11 +568,10 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser('VICReg training script', parents=[get_arguments()])
 
     sum = 0
-    for _ in range(10):
-        for i in range(0, 1):
-            args = parser.parse_args()
-            args.rank = 0
-            args._class = i
-            sum += main(args)
+    for i in range(10):
+        args = parser.parse_args()
+        args.rank = 0
+        args._class = i
+        sum += main(args)
 
     print(f'avg roc: {sum/10.}')

@@ -25,32 +25,18 @@ from datasets import OneClassDataset
 
 def analysis(model, args):
     aug = 10
-    # inlier = [args._class]
-    # outlier = list(range(10))
-    # outlier.remove(args._class)
-    # dataset = CIFAR10(root='../', train=True, download=True)
-    # transform = augmentations.TrainTransform()
-    # # transform = ToTensor()
-    # inlier_dataset = OneClassDataset(dataset, one_class_labels=inlier, transform=transform, with_rotation=False, augmentation=False)
-    # outlier_dataset = OneClassDataset(dataset, zero_class_labels=outlier, transform=transform, with_rotation=False, augmentation=False)
-    # train_inlier_dataset = Subset(inlier_dataset, range(0, (int)(.7 * len(inlier_dataset))))
-    # train_dataset = train_inlier_dataset
-    # validation_inlier_dataset = Subset(inlier_dataset, range((int)(.7 * len(inlier_dataset)), len(inlier_dataset)))
-    # validation_dataset = ConcatDataset([validation_inlier_dataset, outlier_dataset])
-
-
-    inlier_dataset = OneClassDataset2(CIFAR10(root='../', train=True), one_class_labels=[args._class])
-    train_dataset = Subset(inlier_dataset, range(0, (int)(0.7*len(inlier_dataset))))
-
-    validation_inlier_dataset = Subset(inlier_dataset, range((int)(0.7*len(inlier_dataset)), len(inlier_dataset)))
-    outlier_classes = list(range(10))
-    outlier_classes.remove(args._class)
-    outlier_dataset = OneClassDataset2(CIFAR10(root='../', train=True), zero_class_labels=outlier_classes)
+    inlier = [args._class]
+    outlier = list(range(10))
+    outlier.remove(args._class)
+    dataset = CIFAR10(root='../', train=True, download=True)
+    transform = augmentations.TrainTransform()
+    # transform = ToTensor()
+    inlier_dataset = OneClassDataset(dataset, one_class_labels=inlier, transform=transform, with_rotation=False, augmentation=False)
+    outlier_dataset = OneClassDataset(dataset, zero_class_labels=outlier, transform=transform, with_rotation=False, augmentation=False)
+    train_inlier_dataset = Subset(inlier_dataset, range(0, (int)(.7 * len(inlier_dataset))))
+    train_dataset = train_inlier_dataset
+    validation_inlier_dataset = Subset(inlier_dataset, range((int)(.7 * len(inlier_dataset)), len(inlier_dataset)))
     validation_dataset = ConcatDataset([validation_inlier_dataset, outlier_dataset])
-    # validation_dataset = AugmentedDataset2(validation_dataset, pair=False)
-    # without_pair_train_dataset = AugmentedDataset2(train_dataset, pair=False)
-    # train_dataset = AugmentedDataset(train_dataset)
-    # train_dataset = train_dataset
 
     with torch.no_grad():
         model.backbone_1.eval()
