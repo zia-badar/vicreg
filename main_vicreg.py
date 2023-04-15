@@ -173,8 +173,8 @@ class Model(nn.Module):
         #                        )
 
         layers = []
-        for _ in range(8):
-            layers += [nn.Linear(512, 512, bias=False), nn.BatchNorm1d(512), nn.ReLU(inplace=True)]
+        # for _ in range(8):
+        #     layers += [nn.Linear(512, 512, bias=False), nn.BatchNorm1d(512), nn.ReLU(inplace=True)]
         layers.append(nn.Linear(512, 128))
         self.g = nn.Sequential(*layers)
 
@@ -238,7 +238,7 @@ def main(args):
     scheduler = CosineAnnealingLR(optim, args.epochs)
     scheduler_warmup = GradualWarmupScheduler(optim, multiplier=10.0, total_epoch=10, after_scheduler=scheduler)
 
-    # model.load_state_dict(torch.load(f'contras_256_256/resnet50_{args._class}.pth'))
+    # model.load_state_dict(torch.load(f'vicreg_256_256/resnet50_{args._class}.pth'))
     # roc = analysis(model, args)
     # return roc
 
@@ -379,7 +379,7 @@ class VICReg(nn.Module):
         # self.backbone_2.maxpool = nn.Identity()
         # self.backbone_2 = nn.Sequential(self.backbone_2, BatchNorm1d(512), Linear(512, 32))
 
-        # self.projector_1 = Projector(args, self.embedding)
+        self.projector_1 = Projector(args, 128)
         # #
         # self.classifier = nn.Sequential(Linear(512, 4), BatchNorm1d(4), ReLU())
         # #
@@ -404,16 +404,16 @@ class VICReg(nn.Module):
     def forward(self, x, y, l):
         _, repr_x = self.backbone_1(x)
         _, repr_y = self.backbone_1(y)
-        # x = self.projector_1(repr_x)
-        # y = self.projector_1(repr_y)
+        x = self.projector_1(repr_x)
+        y = self.projector_1(repr_y)
         # l = F.one_hot(l-1).cuda().to(torch.float)
         # rot_loss = (self.cross_entropy_loss(self.classifier(x), l) + self.cross_entropy_loss(self.classifier(y), l))/2
 
         # class_aug_loss = self.classifying_aug_loss(x, y)
 
-        contras_loss = contrastive_loss(repr_x, repr_y)
+        # contras_loss = contrastive_loss(repr_x, repr_y)
 
-        # repr_loss = F.mse_loss(x, y)
+        repr_loss = F.mse_loss(x, y)
 
         # dist = torch.cdist(x, y) ** 2
         # num = torch.sum(torch.diag(dist)) / (torch.prod(torch.tensor(x.shape)))     # same as mse_loss
@@ -427,27 +427,27 @@ class VICReg(nn.Module):
 
         # x = torch.cat(FullGatherLayer.apply(x), dim=0)
         # y = torch.cat(FullGatherLayer.apply(y), dim=0)
-        # x = x - x.mean(dim=0)
-        # y = y - y.mean(dim=0)
-        #
-        # std_x = torch.sqrt(x.var(dim=0) + 0.0001)
-        # std_y = torch.sqrt(y.var(dim=0) + 0.0001)
-        # std_loss = torch.mean(F.relu(1 - std_x)) / 2 + torch.mean(F.relu(1 - std_y)) / 2
-        #
-        # cov_x = (x.T @ x) / (self.args.batch_size - 1)
-        # cov_y = (y.T @ y) / (self.args.batch_size - 1)
-        # cov_loss = off_diagonal(cov_x).pow_(2).sum().div(
-        #     self.num_features
-        # ) + off_diagonal(cov_y).pow_(2).sum().div(self.num_features)
+        x = x - x.mean(dim=0)
+        y = y - y.mean(dim=0)
+
+        std_x = torch.sqrt(x.var(dim=0) + 0.0001)
+        std_y = torch.sqrt(y.var(dim=0) + 0.0001)
+        std_loss = torch.mean(F.relu(1 - std_x)) / 2 + torch.mean(F.relu(1 - std_y)) / 2
+
+        cov_x = (x.T @ x) / (self.args.batch_size - 1)
+        cov_y = (y.T @ y) / (self.args.batch_size - 1)
+        cov_loss = off_diagonal(cov_x).pow_(2).sum().div(
+            self.num_features
+        ) + off_diagonal(cov_y).pow_(2).sum().div(self.num_features)
         # # print(f'{self.args.sim_coeff * repr_loss} , {self.args.std_coeff * std_loss} , {self.args.cov_coeff * cov_loss}, {class_aug_loss}')
 
         loss = (
-            # self.args.sim_coeff * repr_loss
-            # + self.args.std_coeff * std_loss
-            # + self.args.cov_coeff * cov_loss
+            self.args.sim_coeff * repr_loss
+            + self.args.std_coeff * std_loss
+            + self.args.cov_coeff * cov_loss
             # + class_aug_loss
             # + rot_loss
-            contras_loss
+            # contras_loss
         )
         return loss
 

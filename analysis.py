@@ -19,9 +19,9 @@ from dataset2 import OneClassDataset2
 from datasets import OneClassDataset
 
 
-# fig, axis = plt.subplots(10, 1)
-# fig.set_figwidth(10)
-# fig.set_figheight(100)
+fig, axis = plt.subplots(10, 1)
+fig.set_figwidth(10)
+fig.set_figheight(100)
 
 def analysis(model, args):
     aug = 10
@@ -173,11 +173,11 @@ def visual_tsne(model, args, roc):
         nominal_labels = labels == 1
         anomaly_labels = labels == 0
 
-        # ax = axis[args._class]
+        ax = axis[args._class]
 
-        fig, ax = plt.subplots()
-        fig.set_figwidth(10)
-        fig.set_figheight(10)
+        # fig, ax = plt.subplots()
+        # fig.set_figwidth(10)
+        # fig.set_figheight(10)
 
         # ax.scatter(emb[nominal_labels, 0], emb[nominal_labels, 1], label='normal', c='g', marker='.')
         # ax.scatter(emb[anomaly_labels, 0], emb[anomaly_labels, 1], label='anomaly', c='r', marker='.')
@@ -200,7 +200,7 @@ def visual_tsne(model, args, roc):
 
         # produce a legend with the unique colors from the scatter
 
-        # if args._class == 2:
-        #     plt.show()
+        if args._class == 9:
+            plt.show()
 
-        plt.show()
+        # plt.show()
