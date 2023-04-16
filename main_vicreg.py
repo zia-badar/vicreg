@@ -57,7 +57,7 @@ def get_arguments():
                         help='Size and number of layers of the MLP expander head')
 
     # Optim
-    parser.add_argument("--epochs", type=int, default=256,
+    parser.add_argument("--epochs", type=int, default=2048,
                         help='Number of epochs')
     parser.add_argument("--batch-size", type=int, default=256,
                         help='Effective batch size (per worker batch size is [batch-size] / world-size)')
@@ -186,7 +186,7 @@ class Model(nn.Module):
 
 
 def main(args):
-    # torch.backends.cudnn.benchmark = True
+    torch.backends.cudnn.benchmark = True
     # init_distributed_mode(args)
     # print(args)
     # gpu = torch.device(args.device)
@@ -255,14 +255,20 @@ def main(args):
     inlier = [args._class]
     outlier = list(range(10))
     outlier.remove(args._class)
-    dataset = CIFAR10(root='../', train=True, download=True)
+    # dataset = CIFAR10(root='../', train=True, download=True)
     transform = transforms
-    inlier_dataset = OneClassDataset(dataset, one_class_labels=inlier, transform=transform)
-    outlier_dataset = OneClassDataset(dataset, zero_class_labels=outlier, transform=transform)
-    train_inlier_dataset = Subset(inlier_dataset, range(0, (int)(.7 * len(inlier_dataset))))
-    train_dataset = train_inlier_dataset
-    validation_inlier_dataset = Subset(inlier_dataset, range((int)(.7 * len(inlier_dataset)), len(inlier_dataset)))
-    validation_dataset = ConcatDataset([validation_inlier_dataset, outlier_dataset])
+    # inlier_dataset = OneClassDataset(dataset, one_class_labels=inlier, transform=transform)
+    # outlier_dataset = OneClassDataset(dataset, zero_class_labels=outlier, transform=transform)
+    # train_inlier_dataset = Subset(inlier_dataset, range(0, (int)(.7 * len(inlier_dataset))))
+    # train_dataset = train_inlier_dataset
+    # validation_inlier_dataset = Subset(inlier_dataset, range((int)(.7 * len(inlier_dataset)), len(inlier_dataset)))
+    # validation_dataset = ConcatDataset([validation_inlier_dataset, outlier_dataset])
+
+    cifar10_train = CIFAR10(root='.', train=True, download=True)
+    # cifar10_test = CIFAR10(root='.', train=False, download=True)
+    train_dataset = OneClassDataset(cifar10_train, one_class_labels=inlier, transform=transform)
+    # test_dataset = ConcatDataset([OneClassDataset(cifar10_train, zero_class_labels=outlier, transform=transform),
+    #                               OneClassDataset(cifar10_test, one_class_labels= inlier, zero_class_labels=outlier, transform=transform)])
 
     loader = DataLoader(train_dataset, batch_size=args.batch_size, num_workers=args.num_workers, shuffle=True, pin_memory=True)
 
@@ -568,10 +574,11 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser('VICReg training script', parents=[get_arguments()])
 
     sum = 0
-    for i in range(10):
+    for i in range(0, 5):
         args = parser.parse_args()
         args.rank = 0
         args._class = i
+        args.exp_dir = Path('exp_dir_0_5')
         sum += main(args)
 
     print(f'avg roc: {sum/10.}')

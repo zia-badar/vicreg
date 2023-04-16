@@ -28,21 +28,28 @@ def analysis(model, args):
     inlier = [args._class]
     outlier = list(range(10))
     outlier.remove(args._class)
-    dataset = CIFAR10(root='../', train=True, download=True)
+    # dataset = CIFAR10(root='.', train=True, download=True)
     transform = augmentations.TrainTransform()
-    # transform = ToTensor()
-    inlier_dataset = OneClassDataset(dataset, one_class_labels=inlier, transform=transform, with_rotation=False, augmentation=False)
-    outlier_dataset = OneClassDataset(dataset, zero_class_labels=outlier, transform=transform, with_rotation=False, augmentation=False)
-    train_inlier_dataset = Subset(inlier_dataset, range(0, (int)(.7 * len(inlier_dataset))))
-    train_dataset = train_inlier_dataset
-    validation_inlier_dataset = Subset(inlier_dataset, range((int)(.7 * len(inlier_dataset)), len(inlier_dataset)))
-    validation_dataset = ConcatDataset([validation_inlier_dataset, outlier_dataset])
+    # # transform = ToTensor()
+    # inlier_dataset = OneClassDataset(dataset, one_class_labels=inlier, transform=transform, with_rotation=False, augmentation=False)
+    # outlier_dataset = OneClassDataset(dataset, zero_class_labels=outlier, transform=transform, with_rotation=False, augmentation=False)
+    # train_inlier_dataset = Subset(inlier_dataset, range(0, (int)(.7 * len(inlier_dataset))))
+    # train_dataset = train_inlier_dataset
+    # validation_inlier_dataset = Subset(inlier_dataset, range((int)(.7 * len(inlier_dataset)), len(inlier_dataset)))
+    # validation_dataset = ConcatDataset([validation_inlier_dataset, outlier_dataset])
+
+    cifar10_train = CIFAR10(root='.', train=True, download=True)
+    cifar10_test = CIFAR10(root='.', train=False, download=True)
+    train_dataset = OneClassDataset(cifar10_train, one_class_labels=inlier, transform=transform, with_rotation=False, augmentation=False)
+    test_dataset = ConcatDataset([OneClassDataset(cifar10_train, zero_class_labels=outlier, transform=transform, with_rotation=False, augmentation=False),
+                                  OneClassDataset(cifar10_test, one_class_labels= inlier, zero_class_labels=outlier, transform=transform, with_rotation=False, augmentation=False)])
 
     with torch.no_grad():
         model.backbone_1.eval()
 
         training_dataloader = torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size, num_workers=args.num_workers, pin_memory=True)
-        validation_dataloader = torch.utils.data.DataLoader(validation_dataset, batch_size=args.batch_size, num_workers=args.num_workers, pin_memory=True)
+        # validation_dataloader = torch.utils.data.DataLoader(validation_dataset, batch_size=args.batch_size, num_workers=args.num_workers, pin_memory=True)
+        test_dataset = torch.utils.data.DataLoader(test_dataset, batch_size=args.batch_size, num_workers=args.num_workers, pin_memory=True)
 
         train_x = []
         with torch.no_grad():
@@ -59,7 +66,7 @@ def analysis(model, args):
         val_x = []
         labels = []
         with torch.no_grad():
-            for x, l in validation_dataloader:
+            for x, l in test_dataset:
                 x = x.cuda()
                 x, _ = model.backbone_1(x)
                 val_x.append(normalize(x, dim=1))
@@ -126,7 +133,7 @@ def analysis(model, args):
         # roc2 = roc_auc_score(labels, score2)
         # print(f'class {args._class}: roc: {roc}, roc: {roc2}')
         #
-        visual_tsne(model, args, roc)
+        # visual_tsne(model, args, roc)
         return roc
 
 def visual_tsne(model, args, roc):
