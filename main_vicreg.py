@@ -18,7 +18,7 @@ import torch.nn.functional as F
 from torch import nn, optim
 import torch.distributed as dist
 import torchvision.datasets as datasets
-from torch.nn import BatchNorm1d, Linear, ReLU, CrossEntropyLoss, BCEWithLogitsLoss
+from torch.nn import BatchNorm1d, Linear, ReLU, CrossEntropyLoss, BCEWithLogitsLoss, CosineSimilarity
 from torch.optim import SGD
 from torch.optim.lr_scheduler import CosineAnnealingLR, _LRScheduler, ReduceLROnPlateau
 from torch.utils.data import Subset, ConcatDataset, DataLoader
@@ -238,7 +238,7 @@ def main(args):
     scheduler = CosineAnnealingLR(optim, args.epochs)
     scheduler_warmup = GradualWarmupScheduler(optim, multiplier=10.0, total_epoch=10, after_scheduler=scheduler)
 
-    # model.load_state_dict(torch.load(f'vicreg_256_256/resnet50_{args._class}.pth'))
+    # model.load_state_dict(torch.load(f'exp/resnet50_{args._class}.pth'))
     # roc = analysis(model, args)
     # return roc
 
@@ -380,10 +380,10 @@ class VICReg(nn.Module):
         # self.backbone_2 = nn.Sequential(self.backbone_2, BatchNorm1d(512), Linear(512, 32))
 
         self.projector_1 = Projector(args, 128)
-        # #
-        # self.classifier = nn.Sequential(Linear(512, 4), BatchNorm1d(4), ReLU())
-        # #
-        # self.cross_entropy_loss = CrossEntropyLoss()
+        #
+        self.classifier = nn.Sequential(Linear(128, 4), BatchNorm1d(4), ReLU())
+        #
+        self.cross_entropy_loss = CrossEntropyLoss()
         # #
         # self.classifier_aug = nn.Sequential(Linear(1024, 1))
         # #
@@ -406,8 +406,8 @@ class VICReg(nn.Module):
         _, repr_y = self.backbone_1(y)
         x = self.projector_1(repr_x)
         y = self.projector_1(repr_y)
-        # l = F.one_hot(l-1).cuda().to(torch.float)
-        # rot_loss = (self.cross_entropy_loss(self.classifier(x), l) + self.cross_entropy_loss(self.classifier(y), l))/2
+        l = F.one_hot(l-1).cuda().to(torch.float)
+        rot_loss = (self.cross_entropy_loss(self.classifier(repr_x), l) + self.cross_entropy_loss(self.classifier(repr_y), l))/2
 
         # class_aug_loss = self.classifying_aug_loss(x, y)
 
@@ -446,7 +446,7 @@ class VICReg(nn.Module):
             + self.args.std_coeff * std_loss
             + self.args.cov_coeff * cov_loss
             # + class_aug_loss
-            # + rot_loss
+            + rot_loss
             # contras_loss
         )
         return loss
