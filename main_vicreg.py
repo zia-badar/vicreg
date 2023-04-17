@@ -57,7 +57,7 @@ def get_arguments():
                         help='Size and number of layers of the MLP expander head')
 
     # Optim
-    parser.add_argument("--epochs", type=int, default=2048,
+    parser.add_argument("--epochs", type=int, default=256,
                         help='Number of epochs')
     parser.add_argument("--batch-size", type=int, default=256,
                         help='Effective batch size (per worker batch size is [batch-size] / world-size)')
@@ -238,9 +238,9 @@ def main(args):
     scheduler = CosineAnnealingLR(optim, args.epochs)
     scheduler_warmup = GradualWarmupScheduler(optim, multiplier=10.0, total_epoch=10, after_scheduler=scheduler)
 
-    # model.load_state_dict(torch.load(f'exp/resnet50_{args._class}.pth'))
-    # roc = analysis(model, args)
-    # return roc
+    model.load_state_dict(torch.load(f'{args.exp_dir}/resnet50_{args._class}.pth'))
+    roc = analysis(model, args, False)
+    return roc
 
     # if (args.exp_dir / "model.pth").is_file():
     #     if args.rank == 0:
@@ -323,12 +323,17 @@ def main(args):
                 # optimizer=optimizer.state_dict(),
             )
             torch.save(state, args.exp_dir / "model.pth")
+
+        if epoch % 50 == 0:
+            roc = analysis(model, args, False)
+            print(f'class: {args._class}, roc: {roc}')
+            model.train()
+
     if args.rank == 0:
         # torch.save(model.module.backbone.state_dict(), args.exp_dir / f"resnet50_{args._class}.pth")
         torch.save(model.state_dict(), args.exp_dir / f"resnet50_{args._class}.pth")
 
     roc = analysis(model, args)
-
     print(f'class: {args._class}, roc: {roc}')
     return roc
 
@@ -574,11 +579,11 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser('VICReg training script', parents=[get_arguments()])
 
     sum = 0
-    for i in range(0, 5):
+    for i in range(10):
         args = parser.parse_args()
         args.rank = 0
         args._class = i
-        args.exp_dir = Path('exp_dir_0_5')
+        args.exp_dir = Path('exp')
         sum += main(args)
 
     print(f'avg roc: {sum/10.}')
