@@ -238,8 +238,8 @@ def main(args):
     scheduler = CosineAnnealingLR(optim, args.epochs)
     scheduler_warmup = GradualWarmupScheduler(optim, multiplier=10.0, total_epoch=10, after_scheduler=scheduler)
 
-    model.load_state_dict(torch.load(f'{args.exp_dir}/resnet50_{args._class}.pth'))
-    roc = analysis(model, args, False)
+    model.load_state_dict(torch.load(f'exp/resnet50_{args._class}.pth'))
+    roc = analysis(model, args)
     return roc
 
     # if (args.exp_dir / "model.pth").is_file():
@@ -291,7 +291,8 @@ def main(args):
             # with torch.cuda.amp.autocast():
             #     loss = model.forward(x, y, l)
 
-            loss = model.forward(x, y, l)
+            with torch.cuda.amp.autocast():
+                loss = model.forward(x, y, l)
 
             loss.backward()
 
@@ -324,17 +325,17 @@ def main(args):
             )
             torch.save(state, args.exp_dir / "model.pth")
 
-        if epoch % 50 == 0:
-            roc = analysis(model, args, False)
-            print(f'class: {args._class}, roc: {roc}')
-            model.train()
+        # if epoch % 50 == 0:
+        #     roc = analysis(model, args, False)
+        #     print(f'class: {cifar10_train.classes[args._class]}, roc: {roc}')
+        #     model.train()
 
     if args.rank == 0:
         # torch.save(model.module.backbone.state_dict(), args.exp_dir / f"resnet50_{args._class}.pth")
         torch.save(model.state_dict(), args.exp_dir / f"resnet50_{args._class}.pth")
 
     roc = analysis(model, args)
-    print(f'class: {args._class}, roc: {roc}')
+    print(f'class: {cifar10_train.classes[args._class]}, roc: {roc}')
     return roc
 
 
@@ -392,7 +393,11 @@ class VICReg(nn.Module):
 
         self.projector_1 = Projector(args, 128)
         #
-        self.classifier = nn.Sequential(Linear(128, 4), BatchNorm1d(4), ReLU())
+        layers = []
+        for _ in range(2):
+            layers += [nn.Linear(128, 128), nn.BatchNorm1d(128), nn.ReLU(inplace=True)]
+        layers += [nn.Linear(128, 4)]
+        self.classifier = nn.Sequential(*layers)
         #
         self.cross_entropy_loss = CrossEntropyLoss()
         # #
@@ -417,7 +422,7 @@ class VICReg(nn.Module):
         _, repr_y = self.backbone_1(y)
         x = self.projector_1(repr_x)
         y = self.projector_1(repr_y)
-        l = F.one_hot(l-1).cuda().to(torch.float)
+        l = F.one_hot(l-1, num_classes = 4).cuda().to(torch.float)
         rot_loss = (self.cross_entropy_loss(self.classifier(repr_x), l) + self.cross_entropy_loss(self.classifier(repr_y), l))/2
 
         # class_aug_loss = self.classifying_aug_loss(x, y)
@@ -583,7 +588,7 @@ if __name__ == "__main__":
         args = parser.parse_args()
         args.rank = 0
         args._class = i
-        args.exp_dir = Path('exp')
+        args.exp_dir = Path('vicreg_256_256_90_47')
         sum += main(args)
 
     print(f'avg roc: {sum/10.}')
