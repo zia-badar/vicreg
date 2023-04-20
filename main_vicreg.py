@@ -267,6 +267,8 @@ def main(args):
     cifar10_train = CIFAR10(root='.', train=True, download=True)
     # cifar10_test = CIFAR10(root='.', train=False, download=True)
     train_dataset = OneClassDataset(cifar10_train, one_class_labels=inlier, transform=transform)
+    # for no rotations
+    # train_dataset = OneClassDataset(cifar10_train, one_class_labels=inlier, transform=transform, with_rotation=False)
     # test_dataset = ConcatDataset([OneClassDataset(cifar10_train, zero_class_labels=outlier, transform=transform),
     #                               OneClassDataset(cifar10_test, one_class_labels= inlier, zero_class_labels=outlier, transform=transform)])
 
