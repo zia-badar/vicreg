@@ -238,9 +238,9 @@ def main(args):
     scheduler = CosineAnnealingLR(optim, args.epochs)
     scheduler_warmup = GradualWarmupScheduler(optim, multiplier=10.0, total_epoch=10, after_scheduler=scheduler)
 
-    model.load_state_dict(torch.load(f'exp/resnet50_{args._class}.pth'))
-    roc = analysis(model, args)
-    return roc
+    # model.load_state_dict(torch.load(f'exp/resnet50_{args._class}.pth'))
+    # roc = analysis(model, args)
+    # return roc
 
     # if (args.exp_dir / "model.pth").is_file():
     #     if args.rank == 0:
@@ -393,13 +393,13 @@ class VICReg(nn.Module):
 
         self.projector_1 = Projector(args, 128)
         #
-        layers = []
-        for _ in range(2):
-            layers += [nn.Linear(128, 128), nn.BatchNorm1d(128), nn.ReLU(inplace=True)]
-        layers += [nn.Linear(128, 4)]
-        self.classifier = nn.Sequential(*layers)
+        # layers = []
+        # for _ in range(2):
+        #     layers += [nn.Linear(128, 128), nn.BatchNorm1d(128), nn.ReLU(inplace=True)]
+        # layers += [nn.Linear(128, 4)]
+        # self.classifier = nn.Sequential(*layers)
         #
-        self.cross_entropy_loss = CrossEntropyLoss()
+        # self.cross_entropy_loss = CrossEntropyLoss()
         # #
         # self.classifier_aug = nn.Sequential(Linear(1024, 1))
         # #
@@ -423,7 +423,7 @@ class VICReg(nn.Module):
         x = self.projector_1(repr_x)
         y = self.projector_1(repr_y)
         l = F.one_hot(l-1, num_classes = 4).cuda().to(torch.float)
-        rot_loss = (self.cross_entropy_loss(self.classifier(repr_x), l) + self.cross_entropy_loss(self.classifier(repr_y), l))/2
+        # rot_loss = (self.cross_entropy_loss(self.classifier(repr_x), l) + self.cross_entropy_loss(self.classifier(repr_y), l))/2
 
         # class_aug_loss = self.classifying_aug_loss(x, y)
 
@@ -462,7 +462,7 @@ class VICReg(nn.Module):
             + self.args.std_coeff * std_loss
             + self.args.cov_coeff * cov_loss
             # + class_aug_loss
-            + rot_loss
+            # + rot_loss
             # contras_loss
         )
         return loss
@@ -588,7 +588,6 @@ if __name__ == "__main__":
         args = parser.parse_args()
         args.rank = 0
         args._class = i
-        args.exp_dir = Path('vicreg_256_256_90_47')
         sum += main(args)
 
     print(f'avg roc: {sum/10.}')
