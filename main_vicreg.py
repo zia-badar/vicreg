@@ -57,7 +57,7 @@ def get_arguments():
                         help='Size and number of layers of the MLP expander head')
 
     # Optim
-    parser.add_argument("--epochs", type=int, default=256,
+    parser.add_argument("--epochs", type=int, default=512,
                         help='Number of epochs')
     parser.add_argument("--batch-size", type=int, default=256,
                         help='Effective batch size (per worker batch size is [batch-size] / world-size)')
@@ -175,7 +175,7 @@ class Model(nn.Module):
         layers = []
         # for _ in range(8):
         #     layers += [nn.Linear(512, 512, bias=False), nn.BatchNorm1d(512), nn.ReLU(inplace=True)]
-        layers.append(nn.Linear(512, 128))
+        layers.append(nn.Linear(512, 16))
         self.g = nn.Sequential(*layers)
 
     def forward(self, x):
@@ -238,9 +238,9 @@ def main(args):
     scheduler = CosineAnnealingLR(optim, args.epochs)
     scheduler_warmup = GradualWarmupScheduler(optim, multiplier=10.0, total_epoch=10, after_scheduler=scheduler)
 
-    model.load_state_dict(torch.load(f'exp/resnet50_{args._class}.pth'))
-    roc = analysis(model, args)
-    return roc
+    # model.load_state_dict(torch.load(f'exp/resnet50_{args._class}.pth'))
+    # roc = analysis(model, args)
+    # return roc
 
     # if (args.exp_dir / "model.pth").is_file():
     #     if args.rank == 0:
@@ -391,12 +391,12 @@ class VICReg(nn.Module):
         # self.backbone_2.maxpool = nn.Identity()
         # self.backbone_2 = nn.Sequential(self.backbone_2, BatchNorm1d(512), Linear(512, 32))
 
-        self.projector_1 = Projector(args, 128)
+        self.projector_1 = Projector(args, 16)
         #
         layers = []
-        for _ in range(2):
-            layers += [nn.Linear(128, 128), nn.BatchNorm1d(128), nn.ReLU(inplace=True)]
-        layers += [nn.Linear(128, 4)]
+        for _ in range(4):
+            layers += [nn.Linear(512, 512), nn.BatchNorm1d(512), nn.ReLU(inplace=True)]
+        layers += [nn.Linear(512, 4)]
         self.classifier = nn.Sequential(*layers)
         #
         self.cross_entropy_loss = CrossEntropyLoss()
@@ -423,7 +423,7 @@ class VICReg(nn.Module):
         x = self.projector_1(repr_x)
         y = self.projector_1(repr_y)
         l = F.one_hot(l-1, num_classes = 4).cuda().to(torch.float)
-        rot_loss = (self.cross_entropy_loss(self.classifier(repr_x), l) + self.cross_entropy_loss(self.classifier(repr_y), l))/2
+        rot_loss = (self.cross_entropy_loss(self.classifier(x), l) + self.cross_entropy_loss(self.classifier(y), l))/2
 
         # class_aug_loss = self.classifying_aug_loss(x, y)
 
@@ -588,7 +588,6 @@ if __name__ == "__main__":
         args = parser.parse_args()
         args.rank = 0
         args._class = i
-        args.exp_dir = Path('vicreg_256_256_90_47')
         sum += main(args)
 
     print(f'avg roc: {sum/10.}')
