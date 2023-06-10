@@ -8,13 +8,14 @@ from torchvision.transforms.functional import rotate
 
 
 class OneClassDataset(Dataset):
-    def __init__(self, dataset: Dataset, one_class_labels=[], zero_class_labels=[], transform=None, augmentation=True, with_rotation=True):
+    def __init__(self, dataset: Dataset, one_class_labels=[], zero_class_labels=[], transform=None, augmentation=True, with_rotation=True, rotation=-1):
         self.dataset = dataset
         self.one_class_labels = one_class_labels
         self.transform = transform
         self.filtered_indexes = []
         self.augmentation = augmentation
         self.with_rotation = with_rotation
+        self.rotation = rotation
 
         valid_labels = one_class_labels + zero_class_labels
         for i, (x, l) in enumerate(self.dataset):
@@ -71,6 +72,9 @@ class OneClassDataset(Dataset):
         index = (int)(item/4) if self.with_rotation else item
         x = self.xs[index]
         l = 1 if self.ls[index] in self.one_class_labels else 0
+
+        if self.rotation != -1:
+            x = rotate(x, self.rotations[self.rotation], interpolation=torchvision.transforms.InterpolationMode.BICUBIC)
 
         x1 = self.hflip(x)
         x2 = self.hflip(x)

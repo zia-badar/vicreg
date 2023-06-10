@@ -39,48 +39,60 @@ def analysis(model, args, showTSNE=True):
     # validation_inlier_dataset = Subset(inlier_dataset, range((int)(.7 * len(inlier_dataset)), len(inlier_dataset)))
     # validation_dataset = ConcatDataset([validation_inlier_dataset, outlier_dataset])
 
-    cifar10_train = CIFAR10(root='.', train=True, download=True)
-    cifar10_test = CIFAR10(root='.', train=False, download=True)
-    train_dataset = OneClassDataset(cifar10_train, one_class_labels=inlier, transform=transform, with_rotation=False, augmentation=False)
-    train_aug_rot_dataset = OneClassDataset(cifar10_train, one_class_labels=inlier, transform=transform, with_rotation=True, augmentation=True)
-    test_dataset = ConcatDataset([OneClassDataset(cifar10_train, zero_class_labels=outlier, transform=transform, with_rotation=False, augmentation=False),
-                                  OneClassDataset(cifar10_test, one_class_labels= inlier, zero_class_labels=outlier, transform=transform, with_rotation=False, augmentation=False)])
+    score_sum = None
+    for rotation in range(1):
+        cifar10_train = CIFAR10(root='.', train=True, download=True)
+        cifar10_test = CIFAR10(root='.', train=False, download=True)
+        train_dataset = OneClassDataset(cifar10_train, one_class_labels=inlier, transform=transform, with_rotation=False, augmentation=False, rotation=rotation)
+        test_dataset = ConcatDataset([OneClassDataset(cifar10_train, zero_class_labels=outlier, transform=transform, with_rotation=False, augmentation=False, rotation=rotation),
+                                      OneClassDataset(cifar10_test, one_class_labels= inlier, zero_class_labels=outlier, transform=transform, with_rotation=False, augmentation=False, rotation=rotation)])
 
-    with torch.no_grad():
-        model.backbone_1.eval()
-
-        training_dataloader = torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size, num_workers=args.num_workers, pin_memory=True)
-        train_aug_rot_dataloader = torch.utils.data.DataLoader(train_aug_rot_dataset, batch_size=args.batch_size, num_workers=args.num_workers, pin_memory=True)
-        # validation_dataloader = torch.utils.data.DataLoader(validation_dataset, batch_size=args.batch_size, num_workers=args.num_workers, pin_memory=True)
-        test_dataset = torch.utils.data.DataLoader(test_dataset, batch_size=args.batch_size, num_workers=args.num_workers, pin_memory=True)
-
-        train_x = []
         with torch.no_grad():
-            for x, l in training_dataloader:
-                x = x.cuda()
-                x, _ = model.backbone_1(x)
-                train_x.append(normalize(x, dim=1))
-                # train_x.append(x)
-        train_x = torch.cat(train_x)
-        gamma = (10 / (torch.var(train_x).item() * train_x.shape[1]))
-        svm = OneClassSVM(kernel='rbf', gamma=gamma).fit(train_x.cpu().numpy())
-        # svm = OneClassSVM(kernel='linear').fit(train_x.cpu().numpy())
+            model.backbone_1.eval()
 
-        val_x = []
-        labels = []
-        with torch.no_grad():
-            for x, l in test_dataset:
-                x = x.cuda()
-                x, _ = model.backbone_1(x)
-                val_x.append(normalize(x, dim=1))
-                # val_x.append(x)
-                labels.append(l)
-        val_x = torch.cat(val_x).cpu().numpy()
-        labels = torch.cat(labels).cpu().numpy()
+            training_dataloader = torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size, num_workers=args.num_workers, pin_memory=True)
+            # validation_dataloader = torch.utils.data.DataLoader(validation_dataset, batch_size=args.batch_size, num_workers=args.num_workers, pin_memory=True)
+            test_dataset = torch.utils.data.DataLoader(test_dataset, batch_size=args.batch_size, num_workers=args.num_workers, pin_memory=True)
 
-        score = svm.score_samples(val_x)
-        roc = roc_auc_score(labels, score)
-        print(f'class {args._class}: roc: {roc}')
+            train_x = []
+            with torch.no_grad():
+                for x, l in training_dataloader:
+                    x = x.cuda()
+                    x, _ = model.backbone_1(x)
+                    train_x.append(normalize(x, dim=1))
+                    # train_x.append(x)
+            train_x = torch.cat(train_x)
+            gamma = (10 / (torch.var(train_x).item() * train_x.shape[1]))
+            svm = OneClassSVM(kernel='rbf', gamma=gamma).fit(train_x.cpu().numpy())
+            # svm = OneClassSVM(kernel='linear').fit(train_x.cpu().numpy())
+
+            val_x = []
+            labels = []
+            with torch.no_grad():
+                for x, l in test_dataset:
+                    x = x.cuda()
+                    x, _ = model.backbone_1(x)
+                    val_x.append(normalize(x, dim=1))
+                    # val_x.append(x)
+                    labels.append(l)
+            val_x = torch.cat(val_x).cpu().numpy()
+            labels = torch.cat(labels).cpu().numpy()
+
+            score = svm.score_samples(val_x)
+
+            roc = roc_auc_score(labels, score)
+            print(f'class {args._class}: roc: {roc}')
+
+            if score_sum is None:
+                score_sum = score
+            else:
+                score_sum += score
+
+            roc = roc_auc_score(labels, score_sum)
+            print(f'class {args._class}: roc: {roc}\n\n')
+
+    roc = roc_auc_score(labels, score_sum)
+    print(f'class {args._class}: roc: {roc}')
 
         # train_aug_rot = []
         # for (x, _), l in train_aug_rot_dataloader:
@@ -173,9 +185,9 @@ def analysis(model, args, showTSNE=True):
         # roc2 = roc_auc_score(labels, score2)
         # print(f'class {args._class}: roc: {roc}, roc: {roc2}')
         #
-        if showTSNE:
-            visual_tsne(model, args, roc)
-        return roc
+    if showTSNE:
+        visual_tsne(model, args, roc)
+    return roc
 
 def visual_tsne(model, args, roc):
     aug = 10

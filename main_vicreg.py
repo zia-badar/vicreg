@@ -588,6 +588,9 @@ if __name__ == "__main__":
         args = parser.parse_args()
         args.rank = 0
         args._class = i
-        sum += main(args)
+        try:
+            sum += main(args)
+        except Exception as e:
+            print(e)
 
     print(f'avg roc: {sum/10.}')
