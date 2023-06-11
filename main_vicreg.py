@@ -53,7 +53,7 @@ def get_arguments():
     # Model
     parser.add_argument("--arch", type=str, default="resnet18",
                         help='Architecture of the backbone encoder network')
-    parser.add_argument("--mlp", default="128-128-128",
+    parser.add_argument("--mlp", default="256-256-256",
                         help='Size and number of layers of the MLP expander head')
 
     # Optim
