@@ -197,6 +197,7 @@ def main(args):
     #     print(" ".join(sys.argv))
     #     print(" ".join(sys.argv), file=stats_file)
 
+    args.exp_dir = Path(f'exp_{args.batch_size}_{args.epochs}_{16}_{args.mlp}')
 
     args.exp_dir.mkdir(parents=True, exist_ok=True)
     stats_file = open(args.exp_dir / "stats.txt", "a", buffering=1)
@@ -314,6 +315,8 @@ def main(args):
             #     # print(json.dumps(stats))
             #     # print(json.dumps(stats), file=stats_file)
             #     last_logging = current_time
+            if torch.any(torch.isnan(loss)).item():
+                raise Exception('nan loss')
             total_loss += loss.item()
 
         print(f'loss: {total_loss/len(loader): .2f}, epoch: {epoch}')
@@ -394,9 +397,10 @@ class VICReg(nn.Module):
         self.projector_1 = Projector(args, 16)
         #
         layers = []
+        proj_dim = (int)(args.mlp.split('-')[-1])
         for _ in range(4):
-            layers += [nn.Linear(512, 512), nn.BatchNorm1d(512), nn.ReLU(inplace=True)]
-        layers += [nn.Linear(512, 4)]
+            layers += [nn.Linear(proj_dim, proj_dim), nn.BatchNorm1d(proj_dim), nn.ReLU(inplace=True)]
+        layers += [nn.Linear(proj_dim, 4)]
         self.classifier = nn.Sequential(*layers)
         #
         self.cross_entropy_loss = CrossEntropyLoss()
@@ -581,6 +585,8 @@ def off_diagonal(x):
 #
 
 if __name__ == "__main__":
+    torch.backends.cudnn.benchmark = False
+    torch.backends.cudnn.deterministic = True
     parser = argparse.ArgumentParser('VICReg training script', parents=[get_arguments()])
 
     sum = 0

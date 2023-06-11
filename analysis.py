@@ -40,7 +40,7 @@ def analysis(model, args, showTSNE=True):
     # validation_dataset = ConcatDataset([validation_inlier_dataset, outlier_dataset])
 
     score_sum = None
-    for rotation in range(1):
+    for rotation in range(4):
         cifar10_train = CIFAR10(root='.', train=True, download=True)
         cifar10_test = CIFAR10(root='.', train=False, download=True)
         train_dataset = OneClassDataset(cifar10_train, one_class_labels=inlier, transform=transform, with_rotation=False, augmentation=False, rotation=rotation)
@@ -263,7 +263,7 @@ def visual_tsne(model, args, roc):
 
         # produce a legend with the unique colors from the scatter
 
-        if args._class == 9:
-            plt.show()
+        #if args._class == 9:
+        #    plt.show()
 
         # plt.show()
