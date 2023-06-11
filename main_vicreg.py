@@ -585,7 +585,7 @@ def off_diagonal(x):
 #
 
 if __name__ == "__main__":
-    # torch.backends.cudnn.benchmark = False
+    torch.backends.cudnn.benchmark = False
     torch.use_deterministic_algorithms(True)
     parser = argparse.ArgumentParser('VICReg training script', parents=[get_arguments()])
 
