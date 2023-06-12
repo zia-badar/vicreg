@@ -199,7 +199,7 @@ def main(args):
     #     print(" ".join(sys.argv))
     #     print(" ".join(sys.argv), file=stats_file)
 
-    args.exp_dir = Path(f'exp_{args.batch_size}_{args.epochs}_{16}_{args.mlp}')
+    args.exp_dir = Path(f'exp_{args.batch_size}_{args.epochs}_{args.encoding_dim}_{args.mlp}')
 
     args.exp_dir.mkdir(parents=True, exist_ok=True)
     stats_file = open(args.exp_dir / "stats.txt", "a", buffering=1)
