@@ -55,7 +55,7 @@ def get_arguments():
                         help='Architecture of the backbone encoder network')
     parser.add_argument("--mlp", default="1024-1024-1024",
                         help='Size and number of layers of the MLP expander head')
-    parser.add_argument("--encodingdim", default="16",
+    parser.add_argument("--encodingdim", type=int, default="16",
                         help='Size of Y(representation)')
 
     # Optim
