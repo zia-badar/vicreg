@@ -2,5 +2,5 @@ batchsize_epochs_encodingdim_roc
 batchsize_epochs_projectionhead_encodingdim_roc
 
 
-batch_size: roc, [64, 128, 256, 512] : [, , 0.9142, 0.8981068351851851]
-encoding_dim: roc, [8, 16, 32, 64, 128] : [, 0.9142, 0.9059, 0.9017, col]
+batch_size: roc, [64, 128, 256, 512] : [, , , , 0.9181740833333333]
+encoding_dim: roc, [8, 16, 32, 64, 128] : [, , , , ]

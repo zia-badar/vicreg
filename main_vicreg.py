@@ -55,11 +55,13 @@ def get_arguments():
                         help='Architecture of the backbone encoder network')
     parser.add_argument("--mlp", default="1024-1024-1024",
                         help='Size and number of layers of the MLP expander head')
+    parser.add_argument("--encoding_dim", default="16",
+                        help='Size of Y(representation)')
 
     # Optim
     parser.add_argument("--epochs", type=int, default=512,
                         help='Number of epochs')
-    parser.add_argument("--batch-size", type=int, default=256,
+    parser.add_argument("--batch-size", type=int, default=512,
                         help='Effective batch size (per worker batch size is [batch-size] / world-size)')
     parser.add_argument("--base-lr", type=float, default=0.2,
                         help='Base learning rate, effective learning after warmup is [base-lr] * [batch-size] / 256')
@@ -153,7 +155,7 @@ class GradualWarmupScheduler(_LRScheduler):
 
 
 class Model(nn.Module):
-    def __init__(self, feature_dim=128):
+    def __init__(self, args, feature_dim=128):
         super(Model, self).__init__()
 
         self.f = []
@@ -175,7 +177,7 @@ class Model(nn.Module):
         layers = []
         # for _ in range(8):
         #     layers += [nn.Linear(512, 512, bias=False), nn.BatchNorm1d(512), nn.ReLU(inplace=True)]
-        layers.append(nn.Linear(512, 16))
+        layers.append(nn.Linear(512, args.encoding_dim))
         self.g = nn.Sequential(*layers)
 
     def forward(self, x):
@@ -378,7 +380,7 @@ class VICReg(nn.Module):
         super().__init__()
         self.args = args
         self.num_features = int(args.mlp.split("-")[-1])
-        self.backbone_1 = Model().cuda()
+        self.backbone_1 = Model(args=args).cuda()
         # self.backbone_1, self.embedding = resnet.__dict__[args.arch](
         #     zero_init_residual=True
         # )
@@ -394,7 +396,7 @@ class VICReg(nn.Module):
         # self.backbone_2.maxpool = nn.Identity()
         # self.backbone_2 = nn.Sequential(self.backbone_2, BatchNorm1d(512), Linear(512, 32))
 
-        self.projector_1 = Projector(args, 16)
+        self.projector_1 = Projector(args, args.encoding_dim)
         #
         layers = []
         proj_dim = (int)(args.mlp.split('-')[-1])
