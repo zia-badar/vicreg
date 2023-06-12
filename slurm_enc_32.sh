@@ -12,4 +12,4 @@
 #SBATCH --gres=gpu:tesla:1
 # #SBATCH --mem=256G
 #SBATCH --mail-user==zia.badar@campus.tu-berlin.de
-python main_vicreg.py --encoding_dim 32
+python main_vicreg.py --encodingdim 32

@@ -55,7 +55,7 @@ def get_arguments():
                         help='Architecture of the backbone encoder network')
     parser.add_argument("--mlp", default="1024-1024-1024",
                         help='Size and number of layers of the MLP expander head')
-    parser.add_argument("--encoding_dim", default="16",
+    parser.add_argument("--encodingdim", default="16",
                         help='Size of Y(representation)')
 
     # Optim
@@ -177,7 +177,7 @@ class Model(nn.Module):
         layers = []
         # for _ in range(8):
         #     layers += [nn.Linear(512, 512, bias=False), nn.BatchNorm1d(512), nn.ReLU(inplace=True)]
-        layers.append(nn.Linear(512, args.encoding_dim))
+        layers.append(nn.Linear(512, args.encodingdim))
         self.g = nn.Sequential(*layers)
 
     def forward(self, x):
@@ -199,7 +199,7 @@ def main(args):
     #     print(" ".join(sys.argv))
     #     print(" ".join(sys.argv), file=stats_file)
 
-    args.exp_dir = Path(f'exp_{args.batch_size}_{args.epochs}_{args.encoding_dim}_{args.mlp}')
+    args.exp_dir = Path(f'exp_{args.batch_size}_{args.epochs}_{args.encodingdim}_{args.mlp}')
 
     args.exp_dir.mkdir(parents=True, exist_ok=True)
     stats_file = open(args.exp_dir / "stats.txt", "a", buffering=1)
@@ -396,7 +396,7 @@ class VICReg(nn.Module):
         # self.backbone_2.maxpool = nn.Identity()
         # self.backbone_2 = nn.Sequential(self.backbone_2, BatchNorm1d(512), Linear(512, 32))
 
-        self.projector_1 = Projector(args, args.encoding_dim)
+        self.projector_1 = Projector(args, args.encodingdim)
         #
         layers = []
         proj_dim = (int)(args.mlp.split('-')[-1])
