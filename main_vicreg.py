@@ -61,7 +61,7 @@ def get_arguments():
     # Optim
     parser.add_argument("--epochs", type=int, default=512,
                         help='Number of epochs')
-    parser.add_argument("--batch-size", type=int, default=512,
+    parser.add_argument("--batch-size", type=int, default=384,
                         help='Effective batch size (per worker batch size is [batch-size] / world-size)')
     parser.add_argument("--base-lr", type=float, default=0.2,
                         help='Base learning rate, effective learning after warmup is [base-lr] * [batch-size] / 256')
@@ -75,6 +75,8 @@ def get_arguments():
                         help='Variance regularization loss coefficient')
     parser.add_argument("--cov-coeff", type=float, default=1.0,
                         help='Covariance regularization loss coefficient')
+    parser.add_argument("--rotation-pred", type=bool, default=True,
+                        help='with rotation prediction')
 
     # Running
     parser.add_argument("--num-workers", type=int, default=20)
@@ -199,7 +201,7 @@ def main(args):
     #     print(" ".join(sys.argv))
     #     print(" ".join(sys.argv), file=stats_file)
 
-    args.exp_dir = Path(f'exp_{args.batch_size}_{args.epochs}_{args.encodingdim}_{args.mlp}')
+    args.exp_dir = Path(f'exp_{args.batch_size}_{args.epochs}_{args.encodingdim}_{args.mlp}_{args.rotation_pred}')
 
     args.exp_dir.mkdir(parents=True, exist_ok=True)
     stats_file = open(args.exp_dir / "stats.txt", "a", buffering=1)
@@ -294,8 +296,7 @@ def main(args):
             # with torch.cuda.amp.autocast():
             #     loss = model.forward(x, y, l)
 
-            with torch.cuda.amp.autocast():
-                loss = model.forward(x, y, l)
+            loss = model.forward(x, y, l, args)
 
             loss.backward()
 
@@ -423,13 +424,15 @@ class VICReg(nn.Module):
         tmp_2 = self.classifier_aug(tmp_1)
         return self.bce_loss(tmp_2.reshape(batch_size*2, 1), labels[:, None])
 
-    def forward(self, x, y, l):
+    def forward(self, x, y, l, args):
         _, repr_x = self.backbone_1(x)
         _, repr_y = self.backbone_1(y)
         x = self.projector_1(repr_x)
         y = self.projector_1(repr_y)
         l = F.one_hot(l-1, num_classes = 4).cuda().to(torch.float)
-        rot_loss = (self.cross_entropy_loss(self.classifier(x), l) + self.cross_entropy_loss(self.classifier(y), l))/2
+        rot_loss = 0
+        if args.rotation_pred:
+            rot_loss = (self.cross_entropy_loss(self.classifier(x), l) + self.cross_entropy_loss(self.classifier(y), l))/2
 
         # class_aug_loss = self.classifying_aug_loss(x, y)
 
