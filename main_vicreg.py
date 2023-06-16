@@ -75,8 +75,10 @@ def get_arguments():
                         help='Variance regularization loss coefficient')
     parser.add_argument("--cov-coeff", type=float, default=1.0,
                         help='Covariance regularization loss coefficient')
-    parser.add_argument("--rotation-pred", type=bool, default=True,
+    parser.add_argument("--rotation-pred", default=True, action=argparse.BooleanOptionalAction,
                         help='with rotation prediction')
+    parser.add_argument("--use-rotated-data", default=True, action=argparse.BooleanOptionalAction,
+                        help='with rotation data')
 
     # Running
     parser.add_argument("--num-workers", type=int, default=20)
@@ -201,7 +203,11 @@ def main(args):
     #     print(" ".join(sys.argv))
     #     print(" ".join(sys.argv), file=stats_file)
 
-    args.exp_dir = Path(f'exp_{args.batch_size}_{args.epochs}_{args.encodingdim}_{args.mlp}_{args.rotation_pred}')
+    if args.rotation_pred and not args.use_rotated_data:
+        print('rotated data is required for rotation pred')
+        exit(-1)
+
+    args.exp_dir = Path(f'exp_{args.batch_size}_{args.epochs}_{args.encodingdim}_{args.mlp}_{args.rotation_pred}_{args.use_rotated_data}')
 
     args.exp_dir.mkdir(parents=True, exist_ok=True)
     stats_file = open(args.exp_dir / "stats.txt", "a", buffering=1)
@@ -271,7 +277,7 @@ def main(args):
 
     cifar10_train = CIFAR10(root='.', train=True, download=True)
     # cifar10_test = CIFAR10(root='.', train=False, download=True)
-    train_dataset = OneClassDataset(cifar10_train, one_class_labels=inlier, transform=transform)
+    train_dataset = OneClassDataset(cifar10_train, one_class_labels=inlier, transform=transform, with_rotation=args.use_rotated_data)
     # test_dataset = ConcatDataset([OneClassDataset(cifar10_train, zero_class_labels=outlier, transform=transform),
     #                               OneClassDataset(cifar10_test, one_class_labels= inlier, zero_class_labels=outlier, transform=transform)])
 

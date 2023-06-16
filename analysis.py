@@ -207,7 +207,7 @@ def visual_tsne(model, args, roc):
 
     cifar10_test = CIFAR10(root='.', train=False, download=True)
     inlier_dataset = Subset(OneClassDataset(cifar10_test, one_class_labels=inlier, transform=transform, with_rotation=True, augmentation=False), range(0, 1000*4))
-    outlier_dataset = Subset(OneClassDataset(cifar10_test, zero_class_labels=outlier, transform=transform, with_rotation=True, augmentation=False), range(0, (int)(len(inlier_dataset)/4)))
+    outlier_dataset = Subset(OneClassDataset(cifar10_test, zero_class_labels=outlier, transform=transform, with_rotation=True, augmentation=False), range(0, (int)(len(inlier_dataset))))
     validation_dataset = ConcatDataset([inlier_dataset, outlier_dataset])
 
     with torch.no_grad():
@@ -263,7 +263,7 @@ def visual_tsne(model, args, roc):
 
         # produce a legend with the unique colors from the scatter
 
-        #if args._class == 9:
-        #    plt.show()
+        if args._class == 9:
+           plt.show()
 
         # plt.show()

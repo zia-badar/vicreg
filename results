@@ -3,4 +3,8 @@ batchsize_epochs_projectionhead_encodingdim_roc
 
 a100/3060
 encoding: 16, batch_size: roc, [64, 128, 256, 384, 512] : [0, 0, 0, 0.9222603333333333, 0.9181740833333333/0.9217764537037038]
-batach_size: 512, encoding_dim: roc, [8, 16, 32, 64, 128] : [0.9147604592592593, , , , 0.9113715907407407]
+batach_size: 512, encoding_dim: roc, [8, 16, 32, 64, 128] : [0.9147604592592593, , 0.9156930722222223, 0.9139667740740741, 0.9113715907407407]
+
+with rotation prediction encoding 16, batch_size 384, roc 0.9221625055555556, full precision on 3060
+without rotation prediction, with rotated data, encoding 16, batch_size 384, roc 0.8626450611111111, not full precision on 3060
+without rotation prediction, without rotated data, encoding 16, batch_size 384, roc 0.8462, not full precision on 3060

@@ -12,4 +12,4 @@
 #SBATCH --gres=gpu:tesla:1
 # #SBATCH --mem=256G
 #SBATCH --mail-user==zia.badar@campus.tu-berlin.de
-python main_vicreg.py --encodingdim 16 --batch_size 384 --rotation_pred False
+python main_vicreg.py --encodingdim 16 --batch-size 384 --no-rotation-pred
