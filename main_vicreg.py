@@ -30,6 +30,7 @@ from tqdm import tqdm
 
 import augmentations as aug
 from analysis import analysis
+from analysis_result import Result
 from dataset2 import OneClassDataset2, AugmentedDataset2
 from datasets import OneClassDataset
 from distributed import init_distributed_mode
@@ -191,7 +192,7 @@ class Model(nn.Module):
         return feature, out
 
 
-def main(args):
+def main(args, result):
     torch.backends.cudnn.benchmark = True
     # init_distributed_mode(args)
     # print(args)
@@ -250,7 +251,7 @@ def main(args):
     scheduler_warmup = GradualWarmupScheduler(optim, multiplier=10.0, total_epoch=10, after_scheduler=scheduler)
 
     # model.load_state_dict(torch.load(f'exp/resnet50_{args._class}.pth'))
-    # roc = analysis(model, args)
+    # roc = analysis(model, args, result)
     # return roc
 
     # if (args.exp_dir / "model.pth").is_file():
@@ -287,9 +288,11 @@ def main(args):
 
     # start_time = last_logging = time.time()
     # scaler = torch.cuda.amp.GradScaler()
-    for epoch in tqdm(range(start_epoch, args.epochs+1)):
+    bar = tqdm(range(start_epoch, args.epochs+1))
+    for epoch in bar:
         # sampler.set_epoch(epoch)
         total_loss = 0
+        epoch_loss = None
         for step, ((x, y), l) in enumerate(loader):
             # x = x.cuda(gpu, non_blocking=True)
             # y = y.cuda(gpu, non_blocking=True)
@@ -302,9 +305,13 @@ def main(args):
             # with torch.cuda.amp.autocast():
             #     loss = model.forward(x, y, l)
 
-            loss = model.forward(x, y, l, args)
+            loss_info, loss = model.forward(x, y, l, args)
 
             loss.backward()
+            if epoch_loss is None:
+                epoch_loss = torch.tensor(loss_info)
+            else:
+                epoch_loss += torch.tensor(loss_info)
 
             # scaler.scale(loss).backward()
             # scaler.step(optimizer)
@@ -328,7 +335,9 @@ def main(args):
                 raise Exception('nan loss')
             total_loss += loss.item()
 
-        print(f'loss: {total_loss/len(loader): .2f}, epoch: {epoch}')
+        # print(f'loss: {total_loss/len(loader): .2f}, epoch: {epoch}')
+        bar.set_description(f'{epoch_loss/len(loader)}, loss: {total_loss/len(loader): .2f}')
+
         if args.rank == 0:
             state = dict(
                 epoch=epoch + 1,
@@ -346,7 +355,7 @@ def main(args):
         # torch.save(model.module.backbone.state_dict(), args.exp_dir / f"resnet50_{args._class}.pth")
         torch.save(model.state_dict(), args.exp_dir / f"resnet50_{args._class}.pth")
 
-    roc = analysis(model, args)
+    roc = analysis(model, args, result)
     print(f'class: {cifar10_train.classes[args._class]}, roc: {roc}')
     return roc
 
@@ -480,7 +489,7 @@ class VICReg(nn.Module):
             + rot_loss
             # contras_loss
         )
-        return loss
+        return [self.args.sim_coeff * repr_loss.item(), self.args.std_coeff * std_loss.item(), self.args.cov_coeff * cov_loss.item(), rot_loss.item()], loss
 
 
 def Projector(args, embedding):
@@ -600,14 +609,18 @@ if __name__ == "__main__":
     torch.use_deterministic_algorithms(True)
     parser = argparse.ArgumentParser('VICReg training script', parents=[get_arguments()])
 
+    result = Result('result_01')
+
     sum = 0
     for i in range(10):
         args = parser.parse_args()
         args.rank = 0
         args._class = i
         try:
-            sum += main(args)
+            sum += main(args, result)
         except Exception as e:
             print(e)
 
     print(f'avg roc: {sum/10.}')
+
+    result.save()

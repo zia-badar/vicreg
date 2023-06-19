@@ -24,7 +24,7 @@ fig, axis = plt.subplots(10, 1)
 fig.set_figwidth(10)
 fig.set_figheight(100)
 
-def analysis(model, args, showTSNE=True):
+def analysis(model, args, result, showTSNE=True):
     aug = 10
     inlier = [args._class]
     outlier = list(range(10))
@@ -90,6 +90,14 @@ def analysis(model, args, showTSNE=True):
 
             roc = roc_auc_score(labels, score_sum)
             print(f'class {args._class}: roc: {roc}\n\n')
+
+            if not hasattr(result, 'class_to_rotation_roc'):
+                result.class_to_rotation_roc = {}
+
+            if result.class_to_rotation_roc.get(args._class) == None:
+                result.class_to_rotation_roc[args._class] = {}
+
+            result.class_to_rotation_roc[args._class][rotation] = roc
 
     roc = roc_auc_score(labels, score_sum)
     print(f'class {args._class}: roc: {roc}')
@@ -186,10 +194,10 @@ def analysis(model, args, showTSNE=True):
         # print(f'class {args._class}: roc: {roc}, roc: {roc2}')
         #
     if showTSNE:
-        visual_tsne(model, args, roc)
+        visual_tsne(model, args, roc, result)
     return roc
 
-def visual_tsne(model, args, roc):
+def visual_tsne(model, args, roc, result):
     aug = 10
     inlier = [args._class]
     outlier = list(range(10))
@@ -208,6 +216,8 @@ def visual_tsne(model, args, roc):
     cifar10_test = CIFAR10(root='.', train=False, download=True)
     inlier_dataset = Subset(OneClassDataset(cifar10_test, one_class_labels=inlier, transform=transform, with_rotation=True, augmentation=False), range(0, 1000*4))
     outlier_dataset = Subset(OneClassDataset(cifar10_test, zero_class_labels=outlier, transform=transform, with_rotation=True, augmentation=False), range(0, (int)(len(inlier_dataset))))
+    # inlier_dataset = Subset(OneClassDataset(cifar10_test, one_class_labels=inlier, transform=transform, with_rotation=False, augmentation=False), range(0, 1000))
+    # outlier_dataset = Subset(OneClassDataset(cifar10_test, zero_class_labels=outlier, transform=transform, with_rotation=False, augmentation=False), range(0, (int)(len(inlier_dataset))))
     validation_dataset = ConcatDataset([inlier_dataset, outlier_dataset])
 
     with torch.no_grad():
@@ -259,7 +269,26 @@ def visual_tsne(model, args, roc):
         ax.set_title(f'class: {cifar10_test.classes[args._class]}, roc: {roc}')
         ax.legend()
 
+        if not hasattr(result, 'tsne_plots'):
+            result.tsne_plots = {}
 
+        if result.tsne_plots.get(args._class) == None:
+            result.tsne_plots[args._class] = {}
+
+        if not hasattr(result.tsne_plots[args._class], 'emb'):
+            result.tsne_plots[args._class]['emb'] = emb
+
+        if not hasattr(result.tsne_plots[args._class], 'anomaly_labels'):
+            result.tsne_plots[args._class]['anomaly_labels'] = anomaly_labels
+
+        if not hasattr(result.tsne_plots[args._class], 'rot_0_labels'):
+            result.tsne_plots[args._class]['rot_0_labels'] = rot_0_labels
+        if not hasattr(result.tsne_plots[args._class], 'rot_90_labels'):
+            result.tsne_plots[args._class]['rot_90_labels'] = rot_90_labels
+        if not hasattr(result.tsne_plots[args._class], 'rot_180_labels'):
+            result.tsne_plots[args._class]['rot_180_labels'] = rot_180_labels
+        if not hasattr(result.tsne_plots[args._class], 'rot_270_labels'):
+            result.tsne_plots[args._class]['rot_270_labels'] = rot_270_labels
 
         # produce a legend with the unique colors from the scatter
 
