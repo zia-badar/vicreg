@@ -22,7 +22,6 @@ class GaussianBlur(object):
         else:
             return img
 
-
 class Solarization(object):
     def __init__(self, p):
         self.p = p
@@ -39,7 +38,7 @@ class TrainTransform(object):
         self.transform = transforms.Compose(
             [
                 transforms.RandomResizedCrop(
-                    32, interpolation=InterpolationMode.BICUBIC
+                    128, interpolation=InterpolationMode.BICUBIC
                 ),
                 # transforms.RandomHorizontalFlip(p=0.5),
                 transforms.RandomApply(
@@ -62,7 +61,7 @@ class TrainTransform(object):
         self.transform_prime = transforms.Compose(
             [
                 transforms.RandomResizedCrop(
-                    32, interpolation=InterpolationMode.BICUBIC
+                    128, interpolation=InterpolationMode.BICUBIC
                 ),
                 # transforms.RandomHorizontalFlip(p=0.5),
                 transforms.RandomApply(

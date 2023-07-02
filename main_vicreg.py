@@ -25,7 +25,8 @@ from torch.utils.data import Subset, ConcatDataset, DataLoader
 from torchlars import LARS
 from torchvision.datasets import CIFAR10
 from torch.nn.functional import normalize
-from torchvision.models import resnet18
+from torchvision.models import resnet18, ResNet18_Weights
+from torchvision4ad.datasets import MVTecAD
 from tqdm import tqdm
 
 import augmentations as aug
@@ -60,9 +61,9 @@ def get_arguments():
                         help='Size of Y(representation)')
 
     # Optim
-    parser.add_argument("--epochs", type=int, default=512,
+    parser.add_argument("--epochs", type=int, default=0,
                         help='Number of epochs')
-    parser.add_argument("--batch-size", type=int, default=384,
+    parser.add_argument("--batch-size", type=int, default=32,
                         help='Effective batch size (per worker batch size is [batch-size] / world-size)')
     parser.add_argument("--base-lr", type=float, default=0.2,
                         help='Base learning rate, effective learning after warmup is [base-lr] * [batch-size] / 256')
@@ -164,7 +165,7 @@ class Model(nn.Module):
         super(Model, self).__init__()
 
         self.f = []
-        for name, module in resnet18().named_children():
+        for name, module in resnet18(weights = ResNet18_Weights.IMAGENET1K_V1).named_children():
             if name == 'conv1':
                 module = nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1, bias=False)
             if not isinstance(module, nn.Linear) and not isinstance(module, nn.MaxPool2d):
@@ -250,9 +251,9 @@ def main(args, result):
     scheduler = CosineAnnealingLR(optim, args.epochs)
     scheduler_warmup = GradualWarmupScheduler(optim, multiplier=10.0, total_epoch=10, after_scheduler=scheduler)
 
-    # model.load_state_dict(torch.load(f'exp/resnet50_{args._class}.pth'))
-    # roc = analysis(model, args, result)
-    # return roc
+    model.load_state_dict(torch.load(f'exp_32_512_16_1024-1024-1024_False_False_with_pretraining/resnet50_{args._class}.pth'))
+    roc = analysis(model, args, result)
+    return roc
 
     # if (args.exp_dir / "model.pth").is_file():
     #     if args.rank == 0:
@@ -265,7 +266,7 @@ def main(args, result):
     #     start_epoch = 0
 
     inlier = [args._class]
-    outlier = list(range(10))
+    outlier = list(range(15))
     outlier.remove(args._class)
     # dataset = CIFAR10(root='../', train=True, download=True)
     transform = transforms
@@ -276,11 +277,15 @@ def main(args, result):
     # validation_inlier_dataset = Subset(inlier_dataset, range((int)(.7 * len(inlier_dataset)), len(inlier_dataset)))
     # validation_dataset = ConcatDataset([validation_inlier_dataset, outlier_dataset])
 
-    cifar10_train = CIFAR10(root='.', train=True, download=True)
+    # cifar10_train = CIFAR10(root='.', train=True, download=True)
     # cifar10_test = CIFAR10(root='.', train=False, download=True)
-    train_dataset = OneClassDataset(cifar10_train, one_class_labels=inlier, transform=transform, with_rotation=args.use_rotated_data)
+    # train_dataset = OneClassDataset(cifar10_train, one_class_labels=inlier, transform=transform, with_rotation=args.use_rotated_data)
     # test_dataset = ConcatDataset([OneClassDataset(cifar10_train, zero_class_labels=outlier, transform=transform),
     #                               OneClassDataset(cifar10_test, one_class_labels= inlier, zero_class_labels=outlier, transform=transform)])
+
+    mvtech_train = MVTecAD(root='.', dataset_name=(list)(MVTecAD.dataset_urls.keys())[args._class], train=True, download=True)
+    train_inliers = [mvtech_train.class_to_idx['good']]
+    train_dataset = OneClassDataset(mvtech_train, one_class_labels=train_inliers, transform=transform, with_rotation=args.use_rotated_data)
 
     loader = DataLoader(train_dataset, batch_size=args.batch_size, num_workers=args.num_workers, shuffle=True, pin_memory=True)
 
@@ -356,7 +361,7 @@ def main(args, result):
         torch.save(model.state_dict(), args.exp_dir / f"resnet50_{args._class}.pth")
 
     roc = analysis(model, args, result)
-    print(f'class: {cifar10_train.classes[args._class]}, roc: {roc}')
+    print(f'class: {(list)(MVTecAD.dataset_urls.keys())[args._class]}, roc: {roc}')
     return roc
 
 
@@ -489,7 +494,7 @@ class VICReg(nn.Module):
             + rot_loss
             # contras_loss
         )
-        return [self.args.sim_coeff * repr_loss.item(), self.args.std_coeff * std_loss.item(), self.args.cov_coeff * cov_loss.item(), rot_loss.item()], loss
+        return [self.args.sim_coeff * repr_loss.item(), self.args.std_coeff * std_loss.item(), self.args.cov_coeff * cov_loss.item()], loss
 
 
 def Projector(args, embedding):
@@ -612,7 +617,7 @@ if __name__ == "__main__":
     result = Result('result_01')
 
     sum = 0
-    for i in range(10):
+    for i in range(15):
         args = parser.parse_args()
         args.rank = 0
         args._class = i
@@ -621,6 +626,6 @@ if __name__ == "__main__":
         except Exception as e:
             print(e)
 
-    print(f'avg roc: {sum/10.}')
+    print(f'avg roc: {sum/15.}')
 
     result.save()

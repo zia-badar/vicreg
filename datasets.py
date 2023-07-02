@@ -39,6 +39,7 @@ class OneClassDataset(Dataset):
         self.rotations = [0, 90, 180, 270]
 
         self.hflip = torchvision.transforms.RandomHorizontalFlip(0.5)
+        self.resize = Resize(256, interpolation=torchvision.transforms.InterpolationMode.BICUBIC)
 
     # def __getitem__(self, item):
     #
@@ -99,7 +100,7 @@ class OneClassDataset(Dataset):
             if l == 1:
                 l = item%4 + 1
 
-        return self.transform(x1, x2) if self.augmentation else self.to_tensor(x), l
+        return self.transform(x1, x2) if self.augmentation else self.resize(self.to_tensor(x)), l
 
     def __len__(self):
         return 4*len(self.filtered_indexes) if self.with_rotation else len(self.filtered_indexes)

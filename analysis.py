@@ -13,6 +13,7 @@ from torch.nn.functional import normalize
 from torch.utils.data import Subset, ConcatDataset, DataLoader
 from torchvision.datasets import CIFAR10
 from torchvision.transforms import transforms, ToTensor
+from torchvision4ad.datasets import MVTecAD
 from tsne_torch import TorchTSNE
 
 import augmentations
@@ -20,14 +21,14 @@ from dataset2 import OneClassDataset2
 from datasets import OneClassDataset
 
 
-fig, axis = plt.subplots(10, 1)
-fig.set_figwidth(10)
+fig, axis = plt.subplots(15, 1)
+fig.set_figwidth(15)
 fig.set_figheight(100)
 
 def analysis(model, args, result, showTSNE=True):
     aug = 10
     inlier = [args._class]
-    outlier = list(range(10))
+    outlier = list(range(15))
     outlier.remove(args._class)
     # dataset = CIFAR10(root='.', train=True, download=True)
     transform = augmentations.TrainTransform()
@@ -40,13 +41,24 @@ def analysis(model, args, result, showTSNE=True):
     # validation_dataset = ConcatDataset([validation_inlier_dataset, outlier_dataset])
 
     score_sum = None
-    for rotation in range(4):
-        cifar10_train = CIFAR10(root='.', train=True, download=True)
-        cifar10_test = CIFAR10(root='.', train=False, download=True)
-        train_dataset = OneClassDataset(cifar10_train, one_class_labels=inlier, transform=transform, with_rotation=False, augmentation=False, rotation=rotation)
-        test_dataset = ConcatDataset([OneClassDataset(cifar10_train, zero_class_labels=outlier, transform=transform, with_rotation=False, augmentation=False, rotation=rotation),
-                                      OneClassDataset(cifar10_test, one_class_labels= inlier, zero_class_labels=outlier, transform=transform, with_rotation=False, augmentation=False, rotation=rotation)])
+    for rotation in range(1):
+        # cifar10_train = CIFAR10(root='.', train=True, download=True)
+        # cifar10_test = CIFAR10(root='.', train=False, download=True)
+        # train_dataset = OneClassDataset(cifar10_train, one_class_labels=inlier, transform=transform, with_rotation=False, augmentation=False, rotation=rotation)
+        # test_dataset = ConcatDataset([OneClassDataset(cifar10_train, zero_class_labels=outlier, transform=transform, with_rotation=False, augmentation=False, rotation=rotation),
+        #                               OneClassDataset(cifar10_test, one_class_labels= inlier, zero_class_labels=outlier, transform=transform, with_rotation=False, augmentation=False, rotation=rotation)])
 
+        mvtech_train = MVTecAD(root='.', dataset_name=(list)(MVTecAD.dataset_urls.keys())[args._class], train=True, download=True)
+        mvtech_test = MVTecAD(root='.', dataset_name=(list)(MVTecAD.dataset_urls.keys())[args._class], train=False, download=True)
+        train_inliers = [mvtech_train.class_to_idx['good']]
+        train_outliers = (list)(mvtech_train.class_to_idx.values())
+        train_outliers.remove(mvtech_train.class_to_idx['good'])
+        test_inliers = [mvtech_test.class_to_idx['good']]
+        test_outliers = (list)(mvtech_test.class_to_idx.values())
+        test_outliers.remove(mvtech_test.class_to_idx['good'])
+        train_dataset = OneClassDataset(mvtech_train, one_class_labels=train_inliers, transform=transform, with_rotation=False, augmentation=False, rotation=rotation)
+        test_dataset = ConcatDataset([OneClassDataset(mvtech_train, zero_class_labels=train_outliers, transform=transform, with_rotation=False, augmentation=False, rotation=rotation),
+                                      OneClassDataset(mvtech_test, one_class_labels= test_inliers, zero_class_labels=test_outliers, transform=transform, with_rotation=False, augmentation=False, rotation=rotation)])
         with torch.no_grad():
             model.backbone_1.eval()
 
@@ -89,7 +101,7 @@ def analysis(model, args, result, showTSNE=True):
                 score_sum += score
 
             roc = roc_auc_score(labels, score_sum)
-            print(f'class {args._class}: roc: {roc}\n\n')
+            # print(f'class {args._class}: roc: {roc}\n\n')
 
             if not hasattr(result, 'class_to_rotation_roc'):
                 result.class_to_rotation_roc = {}
@@ -100,7 +112,7 @@ def analysis(model, args, result, showTSNE=True):
             result.class_to_rotation_roc[args._class][rotation] = roc
 
     roc = roc_auc_score(labels, score_sum)
-    print(f'class {args._class}: roc: {roc}')
+    # print(f'class {args._class}: roc: {roc}')
 
         # train_aug_rot = []
         # for (x, _), l in train_aug_rot_dataloader:
@@ -193,14 +205,14 @@ def analysis(model, args, result, showTSNE=True):
         # roc2 = roc_auc_score(labels, score2)
         # print(f'class {args._class}: roc: {roc}, roc: {roc2}')
         #
-    if showTSNE:
-        visual_tsne(model, args, roc, result)
+    # if showTSNE:
+    #     visual_tsne(model, args, roc, result)
     return roc
 
 def visual_tsne(model, args, roc, result):
     aug = 10
     inlier = [args._class]
-    outlier = list(range(10))
+    outlier = list(range(15))
     outlier.remove(args._class)
     # dataset = CIFAR10(root='../', train=True, download=True)
     transform = augmentations.TrainTransform()
@@ -213,9 +225,20 @@ def visual_tsne(model, args, roc, result):
     # validation_dataset = ConcatDataset(
     #     [validation_inlier_dataset, Subset(outlier_dataset, range(0, (int)(len(validation_inlier_dataset)/4)))])
 
-    cifar10_test = CIFAR10(root='.', train=False, download=True)
-    inlier_dataset = Subset(OneClassDataset(cifar10_test, one_class_labels=inlier, transform=transform, with_rotation=True, augmentation=False), range(0, 1000*4))
-    outlier_dataset = Subset(OneClassDataset(cifar10_test, zero_class_labels=outlier, transform=transform, with_rotation=True, augmentation=False), range(0, (int)(len(inlier_dataset))))
+    # cifar10_test = CIFAR10(root='.', train=False, download=True)
+    # inlier_dataset = Subset(OneClassDataset(cifar10_test, one_class_labels=inlier, transform=transform, with_rotation=True, augmentation=False), range(0, 1000*4))
+    # outlier_dataset = Subset(OneClassDataset(cifar10_test, zero_class_labels=outlier, transform=transform, with_rotation=True, augmentation=False), range(0, (int)(len(inlier_dataset))))
+
+    mvtech_test = MVTecAD(root='.', dataset_name=(list)(MVTecAD.dataset_urls.keys())[args._class], train=False, download=True)
+    test_inliers = [mvtech_test.class_to_idx['good']]
+    test_outliers = (list)(mvtech_test.class_to_idx.values())
+    test_outliers.remove(mvtech_test.class_to_idx['good'])
+    inlier_dataset = OneClassDataset(mvtech_test, one_class_labels=test_inliers, transform=transform, with_rotation=False, augmentation=False)
+    outlier_dataset = OneClassDataset(mvtech_test, zero_class_labels=test_outliers, transform=transform, with_rotation=False, augmentation=False)
+    _len = min(len(inlier_dataset), len(outlier_dataset))
+    inlier_dataset = Subset(inlier_dataset, range(0, _len))
+    outlier_dataset = Subset(outlier_dataset, range(0, _len))
+
     # inlier_dataset = Subset(OneClassDataset(cifar10_test, one_class_labels=inlier, transform=transform, with_rotation=False, augmentation=False), range(0, 1000))
     # outlier_dataset = Subset(OneClassDataset(cifar10_test, zero_class_labels=outlier, transform=transform, with_rotation=False, augmentation=False), range(0, (int)(len(inlier_dataset))))
     validation_dataset = ConcatDataset([inlier_dataset, outlier_dataset])
@@ -252,22 +275,22 @@ def visual_tsne(model, args, roc, result):
         # fig.set_figwidth(10)
         # fig.set_figheight(10)
 
-        # ax.scatter(emb[nominal_labels, 0], emb[nominal_labels, 1], label='normal', c='g', marker='.')
-        # ax.scatter(emb[anomaly_labels, 0], emb[anomaly_labels, 1], label='anomaly', c='r', marker='.')
-        # ax.legend()
-
+        ax.scatter(emb[nominal_labels, 0], emb[nominal_labels, 1], label='normal', c='g', marker='.')
         ax.scatter(emb[anomaly_labels, 0], emb[anomaly_labels, 1], label='anomaly', c='r', marker='.')
-        rot_0_labels = labels == 1
-        ax.scatter(emb[rot_0_labels, 0], emb[rot_0_labels, 1], label='rot 0', c='g', marker='.')
-        rot_90_labels = labels == 2
-        ax.scatter(emb[rot_90_labels, 0], emb[rot_90_labels, 1], label='rot 90', c='k', marker='.')
-        rot_180_labels = labels == 3
-        ax.scatter(emb[rot_180_labels, 0], emb[rot_180_labels, 1], label='rot 180', c='m', marker='.')
-        rot_270_labels = labels == 4
-        ax.scatter(emb[rot_270_labels, 0], emb[rot_270_labels, 1], label='rot 270', c='y', marker='.')
-
-        ax.set_title(f'class: {cifar10_test.classes[args._class]}, roc: {roc}')
         ax.legend()
+
+        # ax.scatter(emb[anomaly_labels, 0], emb[anomaly_labels, 1], label='anomaly', c='r', marker='.')
+        # rot_0_labels = labels == 1
+        # ax.scatter(emb[rot_0_labels, 0], emb[rot_0_labels, 1], label='rot 0', c='g', marker='.')
+        # rot_90_labels = labels == 2
+        # ax.scatter(emb[rot_90_labels, 0], emb[rot_90_labels, 1], label='rot 90', c='k', marker='.')
+        # rot_180_labels = labels == 3
+        # ax.scatter(emb[rot_180_labels, 0], emb[rot_180_labels, 1], label='rot 180', c='m', marker='.')
+        # rot_270_labels = labels == 4
+        # ax.scatter(emb[rot_270_labels, 0], emb[rot_270_labels, 1], label='rot 270', c='y', marker='.')
+        #
+        ax.set_title(f'class: {(list)(MVTecAD.dataset_urls.keys())[args._class]}, roc: {roc}')
+        # ax.legend()
 
         if not hasattr(result, 'tsne_plots'):
             result.tsne_plots = {}
@@ -281,18 +304,18 @@ def visual_tsne(model, args, roc, result):
         if not hasattr(result.tsne_plots[args._class], 'anomaly_labels'):
             result.tsne_plots[args._class]['anomaly_labels'] = anomaly_labels
 
-        if not hasattr(result.tsne_plots[args._class], 'rot_0_labels'):
-            result.tsne_plots[args._class]['rot_0_labels'] = rot_0_labels
-        if not hasattr(result.tsne_plots[args._class], 'rot_90_labels'):
-            result.tsne_plots[args._class]['rot_90_labels'] = rot_90_labels
-        if not hasattr(result.tsne_plots[args._class], 'rot_180_labels'):
-            result.tsne_plots[args._class]['rot_180_labels'] = rot_180_labels
-        if not hasattr(result.tsne_plots[args._class], 'rot_270_labels'):
-            result.tsne_plots[args._class]['rot_270_labels'] = rot_270_labels
+        # if not hasattr(result.tsne_plots[args._class], 'rot_0_labels'):
+        #     result.tsne_plots[args._class]['rot_0_labels'] = rot_0_labels
+        # if not hasattr(result.tsne_plots[args._class], 'rot_90_labels'):
+        #     result.tsne_plots[args._class]['rot_90_labels'] = rot_90_labels
+        # if not hasattr(result.tsne_plots[args._class], 'rot_180_labels'):
+        #     result.tsne_plots[args._class]['rot_180_labels'] = rot_180_labels
+        # if not hasattr(result.tsne_plots[args._class], 'rot_270_labels'):
+        #     result.tsne_plots[args._class]['rot_270_labels'] = rot_270_labels
 
         # produce a legend with the unique colors from the scatter
 
-        if args._class == 9:
+        if args._class == 14:
            plt.show()
 
         # plt.show()
