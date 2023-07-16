@@ -194,15 +194,6 @@ class Model(nn.Module):
 
 def main(args, result):
     torch.backends.cudnn.benchmark = True
-    # init_distributed_mode(args)
-    # print(args)
-    # gpu = torch.device(args.device)
-
-    # if args.rank == 0:
-    #     args.exp_dir.mkdir(parents=True, exist_ok=True)
-    #     stats_file = open(args.exp_dir / "stats.txt", "a", buffering=1)
-    #     print(" ".join(sys.argv))
-    #     print(" ".join(sys.argv), file=stats_file)
 
     if args.rotation_pred and not args.use_rotated_data:
         print('rotated data is required for rotation pred')
@@ -217,33 +208,8 @@ def main(args, result):
 
     transforms = aug.TrainTransform()
 
-    # dataset = datasets.ImageFolder(args.data_dir / "train", transforms)
-    # sampler = torch.utils.data.distributed.DistributedSampler(dataset, shuffle=True)
-    # assert args.batch_size % args.world_size == 0
-    # per_device_batch_size = args.batch_size // args.world_size
-    # loader = torch.utils.data.DataLoader(
-    #     dataset,
-    #     batch_size=per_device_batch_size,
-    #     num_workers=args.num_workers,
-    #     pin_memory=True,
-    #     sampler=sampler,
-    # )
-
-
-
-
-    # model = VICReg(args).cuda(gpu)
     model = VICReg(args).cuda()
     model.train()
-    # model = nn.SyncBatchNorm.convert_sync_batchnorm(model)
-    # model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[gpu])
-    # optimizer = LARS(
-    #     model.parameters(),
-    #     lr=0,
-    #     weight_decay=args.wd,
-    #     weight_decay_filter=exclude_bias_and_norm,
-    #     lars_adaptation_filter=exclude_bias_and_norm,
-    # )
 
     base_optimizer = SGD(model.parameters(), lr=1e-1, momentum=0.9, weight_decay=1e-6)
     optim = LARS(base_optimizer, eps=1e-8, trust_coef=0.001)
@@ -254,34 +220,13 @@ def main(args, result):
     # roc = analysis(model, args, result)
     # return roc
 
-    # if (args.exp_dir / "model.pth").is_file():
-    #     if args.rank == 0:
-    #         print("resuming from checkpoint")
-    #     ckpt = torch.load(args.exp_dir / "model.pth", map_location="cpu")
-    #     start_epoch = ckpt["epoch"]
-    #     model.load_state_dict(ckpt["model"])
-    #     optimizer.load_state_dict(ckpt["optimizer"])
-    # else:
-    #     start_epoch = 0
-
     inlier = [args._class]
     outlier = list(range(10))
     outlier.remove(args._class)
-    # dataset = CIFAR10(root='../', train=True, download=True)
     transform = transforms
-    # inlier_dataset = OneClassDataset(dataset, one_class_labels=inlier, transform=transform)
-    # outlier_dataset = OneClassDataset(dataset, zero_class_labels=outlier, transform=transform)
-    # train_inlier_dataset = Subset(inlier_dataset, range(0, (int)(.7 * len(inlier_dataset))))
-    # train_dataset = train_inlier_dataset
-    # validation_inlier_dataset = Subset(inlier_dataset, range((int)(.7 * len(inlier_dataset)), len(inlier_dataset)))
-    # validation_dataset = ConcatDataset([validation_inlier_dataset, outlier_dataset])
 
     cifar10_train = CIFAR10(root='.', train=True, download=True)
-    # cifar10_test = CIFAR10(root='.', train=False, download=True)
     train_dataset = OneClassDataset(cifar10_train, one_class_labels=inlier, transform=transform, with_rotation=args.use_rotated_data)
-    # test_dataset = ConcatDataset([OneClassDataset(cifar10_train, zero_class_labels=outlier, transform=transform),
-    #                               OneClassDataset(cifar10_test, one_class_labels= inlier, zero_class_labels=outlier, transform=transform)])
-
     loader = DataLoader(train_dataset, batch_size=args.batch_size, num_workers=args.num_workers, shuffle=True, pin_memory=True)
 
     start_epoch = 1
@@ -294,12 +239,8 @@ def main(args, result):
         total_loss = 0
         epoch_loss = None
         for step, ((x, y), l) in enumerate(loader):
-            # x = x.cuda(gpu, non_blocking=True)
-            # y = y.cuda(gpu, non_blocking=True)
             x = x.cuda(non_blocking=True)
             y = y.cuda(non_blocking=True)
-
-            # lr = adjust_learning_rate(args, optimizer, loader, step)
 
             optim.zero_grad()
             # with torch.cuda.amp.autocast():
@@ -313,29 +254,13 @@ def main(args, result):
             else:
                 epoch_loss += torch.tensor(loss_info)
 
-            # scaler.scale(loss).backward()
-            # scaler.step(optimizer)
-            # scaler.update()
             optim.step()
             scheduler_warmup.step(epoch - 1 + step / len(loader))
 
-            current_time = time.time()
-            # if args.rank == 0 and current_time - last_logging > args.log_freq_time:
-            #     stats = dict(
-            #         epoch=epoch,
-            #         step=step,
-            #         loss=loss.item(),
-            #         # time=int(current_time - start_time),
-            #         lr=1,
-            #     )
-            #     # print(json.dumps(stats))
-            #     # print(json.dumps(stats), file=stats_file)
-            #     last_logging = current_time
             if torch.any(torch.isnan(loss)).item():
                 raise Exception('nan loss')
             total_loss += loss.item()
 
-        # print(f'loss: {total_loss/len(loader): .2f}, epoch: {epoch}')
         bar.set_description(f'{epoch_loss/len(loader)}, loss: {total_loss/len(loader): .2f}')
 
         if args.rank == 0:
@@ -346,11 +271,6 @@ def main(args, result):
             )
             torch.save(state, args.exp_dir / "model.pth")
 
-        # if epoch % 50 == 0:
-        #     roc = analysis(model, args, False)
-        #     print(f'class: {cifar10_train.classes[args._class]}, roc: {roc}')
-        #     model.train()
-
     if args.rank == 0:
         # torch.save(model.module.backbone.state_dict(), args.exp_dir / f"resnet50_{args._class}.pth")
         torch.save(model.state_dict(), args.exp_dir / f"resnet50_{args._class}.pth")
@@ -359,58 +279,12 @@ def main(args, result):
     print(f'class: {cifar10_train.classes[args._class]}, roc: {roc}')
     return roc
 
-
-def adjust_learning_rate(args, optimizer, loader, step):
-    max_steps = args.epochs * len(loader)
-    warmup_steps = 10 * len(loader)
-    base_lr = args.base_lr * args.batch_size / 256
-    if step < warmup_steps:
-        lr = base_lr * step / warmup_steps
-    else:
-        step -= warmup_steps
-        max_steps -= warmup_steps
-        q = 0.5 * (1 + math.cos(math.pi * step / max_steps))
-        end_lr = base_lr * 0.001
-        lr = base_lr * q + end_lr * (1 - q)
-    for param_group in optimizer.param_groups:
-        param_group["lr"] = lr
-    return lr
-
-def contrastive_loss(z, z_aug):
-    z = normalize(z, dim=1)
-    z_aug = normalize(z_aug, dim=1)
-
-    batch_size = z.shape[0]
-    temperature = 0.5
-
-    # simclr
-    pos = torch.exp((z[:, None, :] @ z_aug[:, :, None]).squeeze()/temperature)
-    mask = torch.cat([torch.logical_not(torch.eye(batch_size).cuda()), torch.logical_not(torch.eye(batch_size).cuda())])
-    neg = torch.sum(torch.masked_select(torch.exp((z @ torch.cat([z, z_aug]).T) / temperature), mask.T).view(batch_size, 2*batch_size-2), dim=1)
-    l = -torch.mean(torch.log(pos/(pos + neg)))
-
-    return l
-
 class VICReg(nn.Module):
     def __init__(self, args):
         super().__init__()
         self.args = args
         self.num_features = int(args.mlp.split("-")[-1])
         self.backbone_1 = Model(args=args).cuda()
-        # self.backbone_1, self.embedding = resnet.__dict__[args.arch](
-        #     zero_init_residual=True
-        # )
-        # self.backbone_2, self.embedding = resnet.__dict__[args.arch](
-        #     zero_init_residual=True
-        # )
-        # self.embedding = 32
-        # self.backbone_1.conv1 = nn.Conv2d(3, 64, kernel_size=(3, 3), stride=1)
-        # self.backbone_1.maxpool = nn.Identity()
-        # self.backbone_1 = nn.Sequential(self.backbone_1, BatchNorm1d(512), Linear(512, 32))
-
-        # self.backbone_2.conv1 = nn.Conv2d(3, 64, kernel_size=(3, 3), stride=1)
-        # self.backbone_2.maxpool = nn.Identity()
-        # self.backbone_2 = nn.Sequential(self.backbone_2, BatchNorm1d(512), Linear(512, 32))
 
         self.projector_1 = Projector(args, args.encodingdim)
         #
@@ -422,14 +296,6 @@ class VICReg(nn.Module):
         self.classifier = nn.Sequential(*layers)
         #
         self.cross_entropy_loss = CrossEntropyLoss()
-        # #
-        # self.classifier_aug = nn.Sequential(Linear(1024, 1))
-        # #
-        # self.labels = torch.tensor([1, 0]).repeat(256).type(torch.float).cuda()
-        # #
-        # self.bce_loss = BCEWithLogitsLoss()
-        #
-        # self.projector_2 = Projector(args, self.embedding)
 
     def classifying_aug_loss(self, a, b):
         batch_size = a.shape[0]
@@ -449,24 +315,8 @@ class VICReg(nn.Module):
         if args.rotation_pred:
             rot_loss = (self.cross_entropy_loss(self.classifier(x), l) + self.cross_entropy_loss(self.classifier(y), l))/2
 
-        # class_aug_loss = self.classifying_aug_loss(x, y)
-
-        # contras_loss = contrastive_loss(repr_x, repr_y)
-
         repr_loss = F.mse_loss(x, y)
 
-        # dist = torch.cdist(x, y) ** 2
-        # num = torch.sum(torch.diag(dist)) / (torch.prod(torch.tensor(x.shape)))     # same as mse_loss
-        # den = torch.sum(torch.sum(dist, dim=1)) / (torch.prod(torch.tensor(x.shape)) * x.shape[0])
-        # repr_loss = num / den
-
-        # num2 = torch.diag(dist) / x.shape[1]
-        # den2 = torch.sum(dist, dim=1) / torch.prod(torch.tensor(x.shape))
-        # repr_loss = torch.mean(num2 / den2)
-
-
-        # x = torch.cat(FullGatherLayer.apply(x), dim=0)
-        # y = torch.cat(FullGatherLayer.apply(y), dim=0)
         x = x - x.mean(dim=0)
         y = y - y.mean(dim=0)
 
@@ -485,9 +335,7 @@ class VICReg(nn.Module):
             self.args.sim_coeff * repr_loss
             + self.args.std_coeff * std_loss
             + self.args.cov_coeff * cov_loss
-            # + class_aug_loss
             + rot_loss
-            # contras_loss
         )
         return [self.args.sim_coeff * repr_loss.item(), self.args.std_coeff * std_loss.item(), self.args.cov_coeff * cov_loss.item(), rot_loss.item()], loss
 
@@ -512,97 +360,6 @@ def off_diagonal(x):
     n, m = x.shape
     assert n == m
     return x.flatten()[:-1].view(n - 1, n + 1)[:, 1:].flatten()
-
-
-# class LARS(optim.Optimizer):
-#     def __init__(
-#         self,
-#         params,
-#         lr,
-#         weight_decay=0,
-#         momentum=0.9,
-#         eta=0.001,
-#         weight_decay_filter=None,
-#         lars_adaptation_filter=None,
-#     ):
-#         defaults = dict(
-#             lr=lr,
-#             weight_decay=weight_decay,
-#             momentum=momentum,
-#             eta=eta,
-#             weight_decay_filter=weight_decay_filter,
-#             lars_adaptation_filter=lars_adaptation_filter,
-#         )
-#         super().__init__(params, defaults)
-#
-#     @torch.no_grad()
-#     def step(self):
-#         for g in self.param_groups:
-#             for p in g["params"]:
-#                 dp = p.grad
-#
-#                 if dp is None:
-#                     continue
-#
-#                 if g["weight_decay_filter"] is None or not g["weight_decay_filter"](p):
-#                     dp = dp.add(p, alpha=g["weight_decay"])
-#
-#                 if g["lars_adaptation_filter"] is None or not g[
-#                     "lars_adaptation_filter"
-#                 ](p):
-#                     param_norm = torch.norm(p)
-#                     update_norm = torch.norm(dp)
-#                     one = torch.ones_like(param_norm)
-#                     q = torch.where(
-#                         param_norm > 0.0,
-#                         torch.where(
-#                             update_norm > 0, (g["eta"] * param_norm / update_norm), one
-#                         ),
-#                         one,
-#                     )
-#                     dp = dp.mul(q)
-#
-#                 param_state = self.state[p]
-#                 if "mu" not in param_state:
-#                     param_state["mu"] = torch.zeros_like(p)
-#                 mu = param_state["mu"]
-#                 mu.mul_(g["momentum"]).add_(dp)
-#
-#                 p.add_(mu, alpha=-g["lr"])
-
-
-# def batch_all_gather(x):
-#     x_list = FullGatherLayer.apply(x)
-#     return torch.cat(x_list, dim=0)
-#
-#
-# class FullGatherLayer(torch.autograd.Function):
-#     """
-#     Gather tensors from all process and support backward propagation
-#     for the gradients across processes.
-#     """
-#
-#     @staticmethod
-#     def forward(ctx, x):
-#         output = [torch.zeros_like(x) for _ in range(dist.get_world_size())]
-#         dist.all_gather(output, x)
-#         return tuple(output)
-#
-#     @staticmethod
-#     def backward(ctx, *grads):
-#         all_gradients = torch.stack(grads)
-#         dist.all_reduce(all_gradients)
-#         return all_gradients[dist.get_rank()]
-#
-#
-# def handle_sigusr1(signum, frame):
-#     os.system(f'scontrol requeue {os.environ["SLURM_JOB_ID"]}')
-#     exit()
-#
-#
-# def handle_sigterm(signum, frame):
-#     pass
-#
 
 if __name__ == "__main__":
     torch.backends.cudnn.benchmark = False
