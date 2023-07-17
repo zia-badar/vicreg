@@ -58,7 +58,7 @@ def analysis(model, args, result, showTSNE=True):
             with torch.no_grad():
                 for x, l in training_dataloader:
                     x = x.cuda()
-                    x, _ = model.backbone_1(x)
+                    x, _, _ = model.backbone_1(x)
                     train_x.append(normalize(x, dim=1))
                     # train_x.append(x)
             train_x = torch.cat(train_x)
@@ -71,7 +71,7 @@ def analysis(model, args, result, showTSNE=True):
             with torch.no_grad():
                 for x, l in test_dataset:
                     x = x.cuda()
-                    x, _ = model.backbone_1(x)
+                    x, _, _ = model.backbone_1(x)
                     val_x.append(normalize(x, dim=1))
                     # val_x.append(x)
                     labels.append(l)

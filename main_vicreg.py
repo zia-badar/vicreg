@@ -36,6 +36,7 @@ from datasets import OneClassDataset
 from distributed import init_distributed_mode
 
 import resnet
+from model import Model
 
 
 def get_arguments():
@@ -159,37 +160,6 @@ class GradualWarmupScheduler(_LRScheduler):
             self.step_ReduceLROnPlateau(metrics, epoch)
 
 
-class Model(nn.Module):
-    def __init__(self, args, feature_dim=128):
-        super(Model, self).__init__()
-
-        self.f = []
-        for name, module in resnet18().named_children():
-            if name == 'conv1':
-                module = nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1, bias=False)
-            if not isinstance(module, nn.Linear) and not isinstance(module, nn.MaxPool2d):
-                self.f.append(module)
-        # encoder
-        self.f = nn.Sequential(*self.f)
-        # projection head
-        # self.g = nn.Sequential(
-        #                        nn.Linear(512, 512, bias=False),
-        #                        nn.BatchNorm1d(512),
-        #                        nn.ReLU(inplace=True),
-        #                        nn.Linear(512, feature_dim),
-        #                        )
-
-        layers = []
-        # for _ in range(8):
-        #     layers += [nn.Linear(512, 512, bias=False), nn.BatchNorm1d(512), nn.ReLU(inplace=True)]
-        layers.append(nn.Linear(512, args.encodingdim))
-        self.g = nn.Sequential(*layers)
-
-    def forward(self, x):
-        x = self.f(x)
-        feature = torch.flatten(x, start_dim=1)
-        out = self.g(feature)
-        return feature, out
 
 
 def main(args, result):
@@ -210,6 +180,8 @@ def main(args, result):
 
     model = VICReg(args).cuda()
     model.train()
+    # model.load_state_dict(torch.load(f'fix_network'))
+    # torch.save(model.state_dict(), 'fix_network')
 
     base_optimizer = SGD(model.parameters(), lr=1e-1, momentum=0.9, weight_decay=1e-6)
     optim = LARS(base_optimizer, eps=1e-8, trust_coef=0.001)
@@ -243,10 +215,10 @@ def main(args, result):
             y = y.cuda(non_blocking=True)
 
             optim.zero_grad()
-            # with torch.cuda.amp.autocast():
-            #     loss = model.forward(x, y, l)
+            with torch.cuda.amp.autocast():
+                loss_info, loss = model.forward(x, y, l, args)
 
-            loss_info, loss = model.forward(x, y, l, args)
+            # loss_info, loss = model.forward(x, y, l, args)
 
             loss.backward()
             if epoch_loss is None:
@@ -284,9 +256,8 @@ class VICReg(nn.Module):
         super().__init__()
         self.args = args
         self.num_features = int(args.mlp.split("-")[-1])
-        self.backbone_1 = Model(args=args).cuda()
+        self.backbone_1 = Model(args.encodingdim, args.mlp).cuda()
 
-        self.projector_1 = Projector(args, args.encodingdim)
         #
         layers = []
         proj_dim = (int)(args.mlp.split('-')[-1])
@@ -306,10 +277,9 @@ class VICReg(nn.Module):
         return self.bce_loss(tmp_2.reshape(batch_size*2, 1), labels[:, None])
 
     def forward(self, x, y, l, args):
-        _, repr_x = self.backbone_1(x)
-        _, repr_y = self.backbone_1(y)
-        x = self.projector_1(repr_x)
-        y = self.projector_1(repr_y)
+        _, _, x = self.backbone_1(x)
+        _, _, y = self.backbone_1(y)
+
         l = F.one_hot(l-1, num_classes = 4).cuda().to(torch.float)
         rot_loss = 0
         if args.rotation_pred:
@@ -340,16 +310,16 @@ class VICReg(nn.Module):
         return [self.args.sim_coeff * repr_loss.item(), self.args.std_coeff * std_loss.item(), self.args.cov_coeff * cov_loss.item(), rot_loss.item()], loss
 
 
-def Projector(args, embedding):
-    mlp_spec = f"{embedding}-{args.mlp}"
-    layers = []
-    f = list(map(int, mlp_spec.split("-")))
-    for i in range(len(f) - 2):
-        layers.append(nn.Linear(f[i], f[i + 1]))
-        layers.append(nn.BatchNorm1d(f[i + 1]))
-        layers.append(nn.ReLU(True))
-    layers.append(nn.Linear(f[-2], f[-1], bias=False))
-    return nn.Sequential(*layers)
+# def Projector(args, embedding):
+#     mlp_spec = f"{embedding}-{args.mlp}"
+#     layers = []
+#     f = list(map(int, mlp_spec.split("-")))
+#     for i in range(len(f) - 2):
+#         layers.append(nn.Linear(f[i], f[i + 1]))
+#         layers.append(nn.BatchNorm1d(f[i + 1]))
+#         layers.append(nn.ReLU(True))
+#     layers.append(nn.Linear(f[-2], f[-1], bias=False))
+#     return nn.Sequential(*layers)
 
 
 def exclude_bias_and_norm(p):
