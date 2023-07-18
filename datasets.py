@@ -8,7 +8,7 @@ from torchvision.transforms.functional import rotate
 
 
 class OneClassDataset(Dataset):
-    def __init__(self, dataset: Dataset, one_class_labels=[], zero_class_labels=[], transform=None, augmentation=True, with_rotation=True, rotation=-1):
+    def __init__(self, dataset: Dataset, one_class_labels=[], zero_class_labels=[], transform=None, augmentation=True, with_rotation=True, rotation=-1, normalization_transform=None):
         self.dataset = dataset
         self.one_class_labels = one_class_labels
         self.transform = transform
@@ -39,6 +39,8 @@ class OneClassDataset(Dataset):
         self.rotations = [0, 90, 180, 270]
 
         self.hflip = torchvision.transforms.RandomHorizontalFlip(0.5)
+
+        self.normalization_tranform = torchvision.transforms.Compose([ToTensor(), normalization_transform] if normalization_transform != None else [ToTensor()])
 
     # def __getitem__(self, item):
     #
@@ -99,7 +101,7 @@ class OneClassDataset(Dataset):
             if l == 1:
                 l = item%4 + 1
 
-        return self.transform(x1, x2) if self.augmentation else self.to_tensor(x), l
+        return self.transform(x1, x2) if self.augmentation else self.normalization_tranform(x), l
 
     def __len__(self):
         return 4*len(self.filtered_indexes) if self.with_rotation else len(self.filtered_indexes)

@@ -36,7 +36,7 @@ class Solarization(object):
 
 
 class TrainTransform(object):
-    def __init__(self):
+    def __init__(self, mean, std):
         self.transform = transforms.Compose(
             [
                 transforms.RandomResizedCrop(
@@ -55,9 +55,9 @@ class TrainTransform(object):
                 # GaussianBlur(p=1.0),
                 # Solarization(p=0.0),
                 transforms.ToTensor(),
-                # transforms.Normalize(
-                #     mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
-                # ),
+                transforms.Normalize(
+                    mean=mean, std=std
+                ),
             ]
         )
         self.transform_prime = transforms.Compose(
@@ -77,10 +77,10 @@ class TrainTransform(object):
                 transforms.RandomGrayscale(p=0.2),
                 # GaussianBlur(p=0.1),
                 # Solarization(p=0.2),
-                transforms.ToTensor()
-                # transforms.Normalize(
-                #     mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
-                # ),
+                transforms.ToTensor(),
+                transforms.Normalize(
+                    mean = mean, std = std
+                ),
             ]
         )
 

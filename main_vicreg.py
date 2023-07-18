@@ -160,8 +160,6 @@ class GradualWarmupScheduler(_LRScheduler):
             self.step_ReduceLROnPlateau(metrics, epoch)
 
 
-
-
 def main(args, result):
     torch.backends.cudnn.benchmark = True
 
@@ -176,7 +174,6 @@ def main(args, result):
     print(" ".join(sys.argv))
     print(" ".join(sys.argv), file=stats_file)
 
-    transforms = aug.TrainTransform()
 
     model = VICReg(args).cuda()
     model.train()
@@ -195,6 +192,19 @@ def main(args, result):
     inlier = [args._class]
     outlier = list(range(10))
     outlier.remove(args._class)
+
+    cifar10_train = CIFAR10(root='.', train=True, download=True)
+    train_dataset = OneClassDataset(cifar10_train, one_class_labels=inlier, transform=None, augmentation=False, with_rotation=False)
+    loader = DataLoader(train_dataset, batch_size=args.batch_size, num_workers=args.num_workers)
+    with torch.no_grad():
+        xs = []
+        for x, _ in loader:
+            xs.append(x)
+        mean = torch.mean(torch.cat(xs), dim=[0, 2, 3])
+        std = torch.std(torch.cat(xs), dim=[0, 2, 3])
+
+    transforms = aug.TrainTransform(mean, std)
+
     transform = transforms
 
     cifar10_train = CIFAR10(root='.', train=True, download=True)
