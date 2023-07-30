@@ -6,7 +6,6 @@
 import torchvision
 from PIL import ImageOps, ImageFilter
 import numpy as np
-import pickle as pk
 import torchvision.transforms as transforms
 from torchvision.transforms import InterpolationMode
 from torchvision.transforms.functional import rotate
@@ -94,14 +93,5 @@ class TrainTransform(object):
     def __call__(self, sample1, sample2):
         x1 = self.transform(sample1)
         x2 = self.transform_prime(sample2)
-        #
-        # with open('fix_x1', 'wb') as file:
-        #     pk.dump(x1, file)
-        # with open('fix_x2', 'wb') as file:
-        #     pk.dump(x2, file)
-        # with open('fix_x1', 'rb') as file:
-        #     x1 = pk.load(file)
-        # with open('fix_x2', 'rb') as file:
-        #     x2 = pk.load(file)
 
         return x1, x2

@@ -27,6 +27,7 @@ from torchvision.datasets import CIFAR10
 from torch.nn.functional import normalize
 from torchvision.models import resnet18
 from tqdm import tqdm
+import pickle as pk
 
 import augmentations as aug
 from analysis import analysis
@@ -37,6 +38,7 @@ from distributed import init_distributed_mode
 
 import resnet
 from model import Model
+from vicreg_loss import vicreg_loss
 
 
 def get_arguments():
@@ -161,7 +163,7 @@ class GradualWarmupScheduler(_LRScheduler):
 
 
 def main(args, result):
-    torch.backends.cudnn.benchmark = True
+    # torch.backends.cudnn.benchmark = True
 
     if args.rotation_pred and not args.use_rotated_data:
         print('rotated data is required for rotation pred')
@@ -175,7 +177,8 @@ def main(args, result):
     print(" ".join(sys.argv), file=stats_file)
 
 
-    model = VICReg(args).cuda()
+    # model = VICReg(args).cuda()
+    model = Model(args.encodingdim, args.mlp).cuda()
     model.train()
     # model.load_state_dict(torch.load(f'fix_network'))
     # torch.save(model.state_dict(), 'fix_network')
@@ -185,7 +188,7 @@ def main(args, result):
     scheduler = CosineAnnealingLR(optim, args.epochs)
     scheduler_warmup = GradualWarmupScheduler(optim, multiplier=10.0, total_epoch=10, after_scheduler=scheduler)
 
-    # model.load_state_dict(torch.load(f'exp/resnet50_{args._class}.pth'))
+    # model.load_state_dict(torch.load(f'exp_384_512_16_1024-1024-1024_True_True/resnet50_{args._class}.pth'))
     # roc = analysis(model, args, result)
     # return roc
 
@@ -216,6 +219,8 @@ def main(args, result):
     # start_time = last_logging = time.time()
     # scaler = torch.cuda.amp.GradScaler()
     bar = tqdm(range(start_epoch, args.epochs+1))
+    loss_ = vicreg_loss(args.rotation_pred, int(args.mlp.split("-")[-1]))
+
     for epoch in bar:
         # sampler.set_epoch(epoch)
         total_loss = 0
@@ -223,10 +228,23 @@ def main(args, result):
         for step, ((x, y), l) in enumerate(loader):
             x = x.cuda(non_blocking=True)
             y = y.cuda(non_blocking=True)
+            #
+            # # with open('fix_x1', 'wb') as file:
+            # #     pk.dump(x, file)
+            # # with open('fix_x2', 'wb') as file:
+            # #     pk.dump(y, file)
+            # with open('fix_x1', 'rb') as file:
+            #     x = pk.load(file)
+            # with open('fix_x2', 'rb') as file:
+            #     y = pk.load(file)
 
             optim.zero_grad()
             with torch.cuda.amp.autocast():
-                loss_info, loss = model.forward(x, y, l, args)
+                _, _, x, c_x = model(x)
+                _, _, y, c_y = model(y)
+                loss_info, loss = loss_(x, y, c_x, c_y, l)
+
+                # loss_info, loss = model.forward(x, y, l, args)
 
             # loss_info, loss = model.forward(x, y, l, args)
 
@@ -261,63 +279,66 @@ def main(args, result):
     print(f'class: {cifar10_train.classes[args._class]}, roc: {roc}')
     return roc
 
-class VICReg(nn.Module):
-    def __init__(self, args):
-        super().__init__()
-        self.args = args
-        self.num_features = int(args.mlp.split("-")[-1])
-        self.backbone_1 = Model(args.encodingdim, args.mlp).cuda()
-
-        #
-        layers = []
-        proj_dim = (int)(args.mlp.split('-')[-1])
-        for _ in range(4):
-            layers += [nn.Linear(proj_dim, proj_dim), nn.BatchNorm1d(proj_dim), nn.ReLU(inplace=True)]
-        layers += [nn.Linear(proj_dim, 4)]
-        self.classifier = nn.Sequential(*layers)
-        #
-        self.cross_entropy_loss = CrossEntropyLoss()
-
-    def classifying_aug_loss(self, a, b):
-        batch_size = a.shape[0]
-        labels = torch.tensor([1, 0]).repeat(batch_size).type(torch.float).cuda()
-        b_sft = torch.cat([b[1:], b[0][None]])
-        tmp_1 = torch.reshape(torch.permute(torch.stack((a, b, a, b_sft)), (1, 0, 2)), (batch_size, 2, 1024))
-        tmp_2 = self.classifier_aug(tmp_1)
-        return self.bce_loss(tmp_2.reshape(batch_size*2, 1), labels[:, None])
-
-    def forward(self, x, y, l, args):
-        _, _, x = self.backbone_1(x)
-        _, _, y = self.backbone_1(y)
-
-        l = F.one_hot(l-1, num_classes = 4).cuda().to(torch.float)
-        rot_loss = 0
-        if args.rotation_pred:
-            rot_loss = (self.cross_entropy_loss(self.classifier(x), l) + self.cross_entropy_loss(self.classifier(y), l))/2
-
-        repr_loss = F.mse_loss(x, y)
-
-        x = x - x.mean(dim=0)
-        y = y - y.mean(dim=0)
-
-        std_x = torch.sqrt(x.var(dim=0) + 0.0001)
-        std_y = torch.sqrt(y.var(dim=0) + 0.0001)
-        std_loss = torch.mean(F.relu(1 - std_x)) / 2 + torch.mean(F.relu(1 - std_y)) / 2
-
-        cov_x = (x.T @ x) / (self.args.batch_size - 1)
-        cov_y = (y.T @ y) / (self.args.batch_size - 1)
-        cov_loss = off_diagonal(cov_x).pow_(2).sum().div(
-            self.num_features
-        ) + off_diagonal(cov_y).pow_(2).sum().div(self.num_features)
-        # # print(f'{self.args.sim_coeff * repr_loss} , {self.args.std_coeff * std_loss} , {self.args.cov_coeff * cov_loss}, {class_aug_loss}')
-
-        loss = (
-            self.args.sim_coeff * repr_loss
-            + self.args.std_coeff * std_loss
-            + self.args.cov_coeff * cov_loss
-            + rot_loss
-        )
-        return [self.args.sim_coeff * repr_loss.item(), self.args.std_coeff * std_loss.item(), self.args.cov_coeff * cov_loss.item(), rot_loss.item()], loss
+# class VICReg(nn.Module):
+#     def __init__(self, args):
+#         super().__init__()
+#         self.args = args
+#         self.num_features = int(args.mlp.split("-")[-1])
+#         self.backbone_1 = Model(args.encodingdim, args.mlp).cuda()
+#         # self.loss_ = vicreg_loss(args)
+#
+#         #
+#         # layers = []
+#         # proj_dim = (int)(args.mlp.split('-')[-1])
+#         # for _ in range(4):
+#         #     layers += [nn.Linear(proj_dim, proj_dim), nn.BatchNorm1d(proj_dim), nn.ReLU(inplace=True)]
+#         # layers += [nn.Linear(proj_dim, 4)]
+#         # self.classifier = nn.Sequential(*layers)
+#         # #
+#         self.cross_entropy_loss = CrossEntropyLoss()
+#
+#     # def classifying_aug_loss(self, a, b):
+#     #     batch_size = a.shape[0]
+#     #     labels = torch.tensor([1, 0]).repeat(batch_size).type(torch.float).cuda()
+#     #     b_sft = torch.cat([b[1:], b[0][None]])
+#     #     tmp_1 = torch.reshape(torch.permute(torch.stack((a, b, a, b_sft)), (1, 0, 2)), (batch_size, 2, 1024))
+#     #     tmp_2 = self.classifier_aug(tmp_1)
+#     #     return self.bce_loss(tmp_2.reshape(batch_size*2, 1), labels[:, None])
+#
+#     def forward(self, x, y, l, args):
+#         _, _, x, c_x = self.backbone_1(x)
+#         _, _, y, c_y = self.backbone_1(y)
+#
+#         # return self.loss_(x, y, c_x, c_y, l)
+#
+#         l = F.one_hot(l-1, num_classes = 4).cuda().to(torch.float)
+#         rot_loss = 0
+#         if args.rotation_pred:
+#             rot_loss = (self.cross_entropy_loss(c_x, l) + self.cross_entropy_loss(c_y, l))/2
+#
+#         repr_loss = F.mse_loss(x, y)
+#
+#         x = x - x.mean(dim=0)
+#         y = y - y.mean(dim=0)
+#
+#         std_x = torch.sqrt(x.var(dim=0) + 0.0001)
+#         std_y = torch.sqrt(y.var(dim=0) + 0.0001)
+#         std_loss = torch.mean(F.relu(1 - std_x)) / 2 + torch.mean(F.relu(1 - std_y)) / 2
+#
+#         cov_x = (x.T @ x) / (self.args.batch_size - 1)
+#         cov_y = (y.T @ y) / (self.args.batch_size - 1)
+#         cov_loss = off_diagonal(cov_x).pow_(2).sum().div(
+#             self.num_features
+#         ) + off_diagonal(cov_y).pow_(2).sum().div(self.num_features)
+#         # # print(f'{self.args.sim_coeff * repr_loss} , {self.args.std_coeff * std_loss} , {self.args.cov_coeff * cov_loss}, {class_aug_loss}')
+#
+#         loss = (
+#             self.args.sim_coeff * repr_loss
+#             + self.args.std_coeff * std_loss
+#             + self.args.cov_coeff * cov_loss
+#             + rot_loss
+#         )
+#         return [self.args.sim_coeff * repr_loss.item(), self.args.std_coeff * std_loss.item(), self.args.cov_coeff * cov_loss.item(), rot_loss.item()], loss
 
 
 # def Projector(args, embedding):
@@ -332,14 +353,14 @@ class VICReg(nn.Module):
 #     return nn.Sequential(*layers)
 
 
-def exclude_bias_and_norm(p):
-    return p.ndim == 1
-
-
-def off_diagonal(x):
-    n, m = x.shape
-    assert n == m
-    return x.flatten()[:-1].view(n - 1, n + 1)[:, 1:].flatten()
+# def exclude_bias_and_norm(p):
+#     return p.ndim == 1
+#
+#
+# def off_diagonal(x):
+#     n, m = x.shape
+#     assert n == m
+#     return x.flatten()[:-1].view(n - 1, n + 1)[:, 1:].flatten()
 
 if __name__ == "__main__":
     torch.backends.cudnn.benchmark = False

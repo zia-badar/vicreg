@@ -60,7 +60,8 @@ def analysis(model, args, result, showTSNE=True):
                                       OneClassDataset(cifar10_test, one_class_labels= inlier, zero_class_labels=outlier, transform=transform, with_rotation=False, augmentation=False, rotation=rotation, normalization_transform=normalization_transform)])
 
         with torch.no_grad():
-            model.backbone_1.eval()
+            # model.backbone_1.eval()
+            model.eval()
 
             training_dataloader = torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size, num_workers=args.num_workers, pin_memory=True)
             # validation_dataloader = torch.utils.data.DataLoader(validation_dataset, batch_size=args.batch_size, num_workers=args.num_workers, pin_memory=True)
@@ -70,7 +71,8 @@ def analysis(model, args, result, showTSNE=True):
             with torch.no_grad():
                 for x, l in training_dataloader:
                     x = x.cuda()
-                    x, _, _ = model.backbone_1(x)
+                    # x, _, _, _ = model.backbone_1(x)
+                    x, _, _, _ = model(x)
                     train_x.append(normalize(x, dim=1))
                     # train_x.append(x)
             train_x = torch.cat(train_x)
@@ -83,7 +85,8 @@ def analysis(model, args, result, showTSNE=True):
             with torch.no_grad():
                 for x, l in test_dataset:
                     x = x.cuda()
-                    x, _, _ = model.backbone_1(x)
+                    # x, _, _, _ = model.backbone_1(x)
+                    x, _, _, _ = model(x)
                     val_x.append(normalize(x, dim=1))
                     # val_x.append(x)
                     labels.append(l)
@@ -242,7 +245,8 @@ def visual_tsne(model, args, roc, result, normalization_transform):
         labels = []
         for x, l in validation_dataloader:
             x = x.cuda()
-            samples.append(model.backbone_1(x)[0])
+            # samples.append(model.backbone_1(x)[0])
+            samples.append(model(x)[0])
             labels.append(l)
 
         samples = torch.cat(samples).cpu()

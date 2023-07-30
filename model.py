@@ -28,9 +28,17 @@ class Model(nn.Module):
 
         self.h = nn.Sequential(*layers)
 
+        layers = []
+        h_dim = (int)(expander_arch.split('-')[-1])
+        for _ in range(4):
+            layers += [nn.Linear(h_dim, h_dim), nn.BatchNorm1d(h_dim), nn.ReLU(inplace=True)]
+        layers += [nn.Linear(h_dim, 4)]
+        self.classifier = nn.Sequential(*layers)
+
     def forward(self, x):
         y = torch.squeeze(self.f(x))
         e = self.e(y)
         z = self.h(e)
+        c = self.classifier(z)
 
-        return y, e, z
+        return y, e, z, c
