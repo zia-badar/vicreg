@@ -54,9 +54,9 @@ class TrainTransform(object):
                 # GaussianBlur(p=1.0),
                 # Solarization(p=0.0),
                 transforms.ToTensor(),
-                transforms.Normalize(
-                    mean=mean, std=std
-                ),
+                # transforms.Normalize(
+                #     mean=mean, std=std
+                # ),
             ]
         )
         self.transform_prime = transforms.Compose(
@@ -77,9 +77,9 @@ class TrainTransform(object):
                 # GaussianBlur(p=0.1),
                 # Solarization(p=0.2),
                 transforms.ToTensor(),
-                transforms.Normalize(
-                    mean = mean, std = std
-                ),
+                # transforms.Normalize(
+                #     mean = mean, std = std
+                # ),
             ]
         )
 

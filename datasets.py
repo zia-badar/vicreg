@@ -40,7 +40,8 @@ class OneClassDataset(Dataset):
 
         self.hflip = torchvision.transforms.RandomHorizontalFlip(0.5)
 
-        self.normalization_tranform = torchvision.transforms.Compose([ToTensor(), normalization_transform] if normalization_transform != None else [ToTensor()])
+        # self.normalization_tranform = torchvision.transforms.Compose([ToTensor(), normalization_transform] if normalization_transform != None else [ToTensor()])
+        self.normalization_tranform = torchvision.transforms.Compose([ToTensor()])
 
     # def __getitem__(self, item):
     #
