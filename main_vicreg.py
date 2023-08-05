@@ -204,7 +204,8 @@ if __name__ == "__main__":
     torch.use_deterministic_algorithms(True)
     parser = argparse.ArgumentParser('VICReg training script', parents=[get_arguments()])
 
-    result = Result('result_01')
+    args = parser.parse_args()
+    result = Result(f'exp_{args.batch_size}_{args.epochs}_{args.encodingdim}_{args.mlp}_{args.rotation_pred}_{args.use_rotated_data}/result_01')
 
     sum = 0
     for i in range(10):

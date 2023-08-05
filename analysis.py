@@ -183,4 +183,4 @@ def visual_tsne(model, args, roc, result, normalization_transform):
             result.tsne_plots[args._class]['rot_270_labels'] = rot_270_labels
 
         if args._class == 9:
-           plt.show()
+            plt.savefig(f'exp_{args.batch_size}_{args.epochs}_{args.encodingdim}_{args.mlp}_{args.rotation_pred}_{args.use_rotated_data}/plot.png')
