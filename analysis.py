@@ -29,15 +29,7 @@ def analysis(model, args, result, showTSNE=True):
     inlier = [args._class]
     outlier = list(range(10))
     outlier.remove(args._class)
-    # dataset = CIFAR10(root='.', train=True, download=True)
     transform = None
-    # # transform = ToTensor()
-    # inlier_dataset = OneClassDataset(dataset, one_class_labels=inlier, transform=transform, with_rotation=False, augmentation=False)
-    # outlier_dataset = OneClassDataset(dataset, zero_class_labels=outlier, transform=transform, with_rotation=False, augmentation=False)
-    # train_inlier_dataset = Subset(inlier_dataset, range(0, (int)(.7 * len(inlier_dataset))))
-    # train_dataset = train_inlier_dataset
-    # validation_inlier_dataset = Subset(inlier_dataset, range((int)(.7 * len(inlier_dataset)), len(inlier_dataset)))
-    # validation_dataset = ConcatDataset([validation_inlier_dataset, outlier_dataset])
 
     cifar10_train = CIFAR10(root='.', train=True, download=True)
     train_dataset = OneClassDataset(cifar10_train, one_class_labels=inlier, transform=None, augmentation=False,
@@ -60,25 +52,20 @@ def analysis(model, args, result, showTSNE=True):
                                       OneClassDataset(cifar10_test, one_class_labels= inlier, zero_class_labels=outlier, transform=transform, with_rotation=False, augmentation=False, rotation=rotation, normalization_transform=normalization_transform)])
 
         with torch.no_grad():
-            # model.backbone_1.eval()
             model.eval()
 
             training_dataloader = torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size, num_workers=args.num_workers, pin_memory=True)
-            # validation_dataloader = torch.utils.data.DataLoader(validation_dataset, batch_size=args.batch_size, num_workers=args.num_workers, pin_memory=True)
             test_dataset = torch.utils.data.DataLoader(test_dataset, batch_size=args.batch_size, num_workers=args.num_workers, pin_memory=True)
 
             train_x = []
             with torch.no_grad():
                 for x, l in training_dataloader:
                     x = x.cuda()
-                    # x, _, _, _ = model.backbone_1(x)
                     x, _, _, _ = model(x)
                     train_x.append(normalize(x, dim=1))
-                    # train_x.append(x)
             train_x = torch.cat(train_x)
             gamma = (10 / (torch.var(train_x).item() * train_x.shape[1]))
             svm = OneClassSVM(kernel='rbf', gamma=gamma).fit(train_x.cpu().numpy())
-            # svm = OneClassSVM(kernel='linear').fit(train_x.cpu().numpy())
 
             val_x = []
             labels = []
@@ -117,97 +104,6 @@ def analysis(model, args, result, showTSNE=True):
     roc = roc_auc_score(labels, score_sum)
     print(f'class {args._class}: roc: {roc}')
 
-        # train_aug_rot = []
-        # for (x, _), l in train_aug_rot_dataloader:
-        #     x = x.cuda()
-        #     x, _ = model.backbone_1(x)
-        #     train_aug_rot.append(x)
-        #
-        # train_aug_rot = torch.cat(train_aug_rot)
-        #
-        # mean = torch.mean(train_aug_rot, dim=0)
-        # std = torch.std(train_aug_rot, dim=0)
-        #
-        # train_x = []
-        # for x, l in training_dataloader:
-        #     x = x.cuda()
-        #     x, _ = model.backbone_1(x)
-        #     x = (x - mean)/std
-        #     train_x.append(x)
-        #
-        # train_x = torch.cat(train_x)
-        #
-        # cosine_sim = CosineSimilarity(dim=-1)
-        # labels = []
-        # cos_sim = []
-        # for x, l in test_dataset:
-        #     x = x.cuda()
-        #     x, _ = model.backbone_1(x)
-        #     x = (x - mean)/std
-        #     cos_sim.append(torch.sum(cosine_sim(train_x, x.unsqueeze(1)), dim=1).values)
-        #     labels.append(l)
-        #
-        # cos_sim = torch.cat(cos_sim).cpu().numpy()
-        # labels = torch.cat(labels).cpu().numpy()
-        #
-        # roc = roc_auc_score(labels, cos_sim)
-        # print(f'class {args._class}: roc: {roc}')
-
-        #
-        # train_x = []
-        # for (x, _), l in training_dataloader:
-        #     train_x.append(model.backbone_1(x.cuda()))
-        #
-        # train_x = torch.cat(train_x)
-        #
-        # score = []
-        # label = []
-        # for (x, _), l in validation_dataloader:
-        #     score.append(torch.mean(torch.topk(cdist(train_x, model.backbone_1(x.cuda())), dim=0, k=100, largest=False).values, dim=0))
-        #     label.append(l)
-        #
-        # score = torch.cat(score).cpu().numpy()
-        # label = torch.cat(label).cpu().numpy()
-        #
-        # roc = roc_auc_score(label, score)
-        # print(f'class {args._class}: roc: {roc}')
-
-
-        # score = []
-        # score2 = []
-        # labels = []
-        # # for (x, y), l in validation_dataloader:
-        # #     batch_size = x.shape[0]
-        # #     x = x.cuda()
-        # #     x = x.reshape((batch_size * aug,) + tuple(x.shape[-3:], ))
-        # #     x = model.backbone(x)
-        # #     x = x.reshape(batch_size, aug, x.shape[-1])
-        # #     y = y.cuda()
-        # #     y = y.reshape((batch_size * aug,) + tuple(y.shape[-3:], ))
-        # #     y = model.backbone(y)
-        # #     y = y.reshape(batch_size, aug, y.shape[-1])
-        # #
-        # #     score.append(torch.norm(x - y, dim=-1).mean(dim=-1))
-        # #     labels.append(l)
-        #
-        # for (x, y), l in validation_dataloader:
-        #     x = x.cuda()
-        #     x = model.backbone_1(x)
-        #     y = y.cuda()
-        #     y = model.backbone_2(y)
-        #
-        #     score.append(torch.norm(x - y, dim=-1))
-        #     score2.append(torch.cosine_similarity(x, y))
-        #     labels.append(l)
-        #
-        # score = torch.cat(score).cpu().numpy()
-        # score2 = torch.cat(score2).cpu().numpy()
-        # labels = torch.cat(labels).cpu().numpy()
-        #
-        # roc = roc_auc_score(labels, -score)
-        # roc2 = roc_auc_score(labels, score2)
-        # print(f'class {args._class}: roc: {roc}, roc: {roc2}')
-        #
     if showTSNE:
         visual_tsne(model, args, roc, result, normalization_transform)
     return roc
@@ -217,22 +113,11 @@ def visual_tsne(model, args, roc, result, normalization_transform):
     inlier = [args._class]
     outlier = list(range(10))
     outlier.remove(args._class)
-    # dataset = CIFAR10(root='../', train=True, download=True)
     transform = None
-    # # transform = ToTensor()
-    # inlier_dataset = OneClassDataset(dataset, one_class_labels=inlier, transform=transform, with_rotation=True, augmentation=False)
-    # outlier_dataset = OneClassDataset(dataset, zero_class_labels=outlier, transform=transform, with_rotation=True, augmentation=False)
-    # train_inlier_dataset = Subset(inlier_dataset, range(0, (int)(.7 * len(inlier_dataset))))
-    # train_dataset = train_inlier_dataset
-    # validation_inlier_dataset = Subset(inlier_dataset, range((int)(.7 * len(inlier_dataset)), len(inlier_dataset)))
-    # validation_dataset = ConcatDataset(
-    #     [validation_inlier_dataset, Subset(outlier_dataset, range(0, (int)(len(validation_inlier_dataset)/4)))])
 
     cifar10_test = CIFAR10(root='.', train=False, download=True)
     inlier_dataset = Subset(OneClassDataset(cifar10_test, one_class_labels=inlier, transform=transform, with_rotation=True, augmentation=False, normalization_transform=normalization_transform), range(0, 1000*4))
     outlier_dataset = Subset(OneClassDataset(cifar10_test, zero_class_labels=outlier, transform=transform, with_rotation=True, augmentation=False, normalization_transform=normalization_transform), range(0, (int)(len(inlier_dataset))))
-    # inlier_dataset = Subset(OneClassDataset(cifar10_test, one_class_labels=inlier, transform=transform, with_rotation=False, augmentation=False), range(0, 1000))
-    # outlier_dataset = Subset(OneClassDataset(cifar10_test, zero_class_labels=outlier, transform=transform, with_rotation=False, augmentation=False), range(0, (int)(len(inlier_dataset))))
     validation_dataset = ConcatDataset([inlier_dataset, outlier_dataset])
 
     with torch.no_grad():
@@ -245,7 +130,6 @@ def visual_tsne(model, args, roc, result, normalization_transform):
         labels = []
         for x, l in validation_dataloader:
             x = x.cuda()
-            # samples.append(model.backbone_1(x)[0])
             samples.append(model(x)[0])
             labels.append(l)
 
@@ -263,14 +147,6 @@ def visual_tsne(model, args, roc, result, normalization_transform):
         anomaly_labels = labels == 0
 
         ax = axis[args._class]
-
-        # fig, ax = plt.subplots()
-        # fig.set_figwidth(10)
-        # fig.set_figheight(10)
-
-        # ax.scatter(emb[nominal_labels, 0], emb[nominal_labels, 1], label='normal', c='g', marker='.')
-        # ax.scatter(emb[anomaly_labels, 0], emb[anomaly_labels, 1], label='anomaly', c='r', marker='.')
-        # ax.legend()
 
         ax.scatter(emb[anomaly_labels, 0], emb[anomaly_labels, 1], label='anomaly', c='r', marker='.')
         rot_0_labels = labels == 1
@@ -306,9 +182,5 @@ def visual_tsne(model, args, roc, result, normalization_transform):
         if not hasattr(result.tsne_plots[args._class], 'rot_270_labels'):
             result.tsne_plots[args._class]['rot_270_labels'] = rot_270_labels
 
-        # produce a legend with the unique colors from the scatter
-
         if args._class == 9:
            plt.show()
-
-        # plt.show()
