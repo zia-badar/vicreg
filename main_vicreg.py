@@ -84,6 +84,8 @@ def get_arguments():
                         help='with rotation prediction')
     parser.add_argument("--use-rotated-data", default=True, action=argparse.BooleanOptionalAction,
                         help='with rotation data')
+    parser.add_argument("--validation-mode", default=False, action=argparse.BooleanOptionalAction,
+                        help='use validation mode')
 
     # Running
     parser.add_argument("--num-workers", type=int, default=20)
@@ -134,22 +136,26 @@ def main(args, result):
     outlier = list(range(10))
     outlier.remove(args._class)
 
-    cifar10_train = CIFAR10(root='.', train=True, download=True)
-    train_dataset = OneClassDataset(cifar10_train, one_class_labels=inlier, transform=None, augmentation=False, with_rotation=False)
-    loader = DataLoader(train_dataset, batch_size=args.batch_size, num_workers=args.num_workers)
-    with torch.no_grad():
-        xs = []
-        for x, _ in loader:
-            xs.append(x)
-        mean = torch.mean(torch.cat(xs), dim=[0, 2, 3])
-        std = torch.std(torch.cat(xs), dim=[0, 2, 3])
-
-    transforms = aug.TrainTransform(mean, std)
+    # cifar10_train = CIFAR10(root='.', train=True, download=True)
+    # train_dataset = OneClassDataset(cifar10_train, one_class_labels=inlier, transform=None, augmentation=False, with_rotation=False)
+    # loader = DataLoader(train_dataset, batch_size=args.batch_size, num_workers=args.num_workers)
+    # with torch.no_grad():
+    #     xs = []
+    #     for x, _ in loader:
+    #         xs.append(x)
+    #     mean = torch.mean(torch.cat(xs), dim=[0, 2, 3])
+    #     std = torch.std(torch.cat(xs), dim=[0, 2, 3])
+    #
+    transforms = aug.TrainTransform()
 
     transform = transforms
 
     cifar10_train = CIFAR10(root='.', train=True, download=True)
     train_dataset = OneClassDataset(cifar10_train, one_class_labels=inlier, transform=transform, with_rotation=args.use_rotated_data)
+
+    if args.validation_mode:
+        train_dataset = Subset(train_dataset, range(0, (int)(.7 * len(train_dataset))))
+
     loader = DataLoader(train_dataset, batch_size=args.batch_size, num_workers=args.num_workers, shuffle=True, pin_memory=True)
 
     start_epoch = 1

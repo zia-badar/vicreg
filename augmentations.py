@@ -35,7 +35,7 @@ class Solarization(object):
 
 
 class TrainTransform(object):
-    def __init__(self, mean, std):
+    def __init__(self):
         self.transform = transforms.Compose(
             [
                 transforms.RandomResizedCrop(

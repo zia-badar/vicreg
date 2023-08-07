@@ -31,25 +31,19 @@ def analysis(model, args, result, showTSNE=True):
     outlier.remove(args._class)
     transform = None
 
-    cifar10_train = CIFAR10(root='.', train=True, download=True)
-    train_dataset = OneClassDataset(cifar10_train, one_class_labels=inlier, transform=None, augmentation=False,
-                                    with_rotation=False)
-    loader = DataLoader(train_dataset, batch_size=args.batch_size, num_workers=args.num_workers)
-    with torch.no_grad():
-        xs = []
-        for x, _ in loader:
-            xs.append(x)
-        mean = torch.mean(torch.cat(xs), dim=[0, 2, 3])
-        std = torch.std(torch.cat(xs), dim=[0, 2, 3])
-    normalization_transform = transforms.Normalize( mean=mean, std=std )
-
     score_sum = None
     for rotation in range(4):
         cifar10_train = CIFAR10(root='.', train=True, download=True)
         cifar10_test = CIFAR10(root='.', train=False, download=True)
-        train_dataset = OneClassDataset(cifar10_train, one_class_labels=inlier, transform=transform, with_rotation=False, augmentation=False, rotation=rotation, normalization_transform=normalization_transform)
-        test_dataset = ConcatDataset([OneClassDataset(cifar10_train, zero_class_labels=outlier, transform=transform, with_rotation=False, augmentation=False, rotation=rotation, normalization_transform=normalization_transform),
-                                      OneClassDataset(cifar10_test, one_class_labels= inlier, zero_class_labels=outlier, transform=transform, with_rotation=False, augmentation=False, rotation=rotation, normalization_transform=normalization_transform)])
+        if args.validation_mode:
+            inlier_dataset = OneClassDataset(cifar10_train, one_class_labels=inlier, transform=None, with_rotation=False, augmentation=False, rotation=rotation)
+            outlier_dataset = OneClassDataset(cifar10_train, zero_class_labels=outlier, transform=None, with_rotation=False, augmentation=False, rotation=rotation)
+            train_dataset = Subset(inlier_dataset, range(0, (int)(.7 * len(inlier_dataset))))
+            test_dataset = ConcatDataset([Subset(inlier_dataset, range((int)(.7 * len(inlier_dataset)), len(inlier_dataset))), outlier_dataset])
+        else:
+            train_dataset = OneClassDataset(cifar10_train, one_class_labels=inlier, transform=None, with_rotation=False, augmentation=False, rotation=rotation)
+            test_dataset = ConcatDataset([OneClassDataset(cifar10_train, zero_class_labels=outlier, transform=None, with_rotation=False, augmentation=False, rotation=rotation),
+                                      OneClassDataset(cifar10_test, one_class_labels= inlier, zero_class_labels=outlier, transform=None, with_rotation=False, augmentation=False, rotation=rotation)])
 
         with torch.no_grad():
             model.eval()
@@ -105,20 +99,27 @@ def analysis(model, args, result, showTSNE=True):
     print(f'class {args._class}: roc: {roc}')
 
     if showTSNE:
-        visual_tsne(model, args, roc, result, normalization_transform)
+        visual_tsne(model, args, roc, result)
     return roc
 
-def visual_tsne(model, args, roc, result, normalization_transform):
+def visual_tsne(model, args, roc, result):
     aug = 10
     inlier = [args._class]
     outlier = list(range(10))
     outlier.remove(args._class)
     transform = None
 
+    cifar10_train = CIFAR10(root='.', train=True, download=True)
     cifar10_test = CIFAR10(root='.', train=False, download=True)
-    inlier_dataset = Subset(OneClassDataset(cifar10_test, one_class_labels=inlier, transform=transform, with_rotation=True, augmentation=False, normalization_transform=normalization_transform), range(0, 1000*4))
-    outlier_dataset = Subset(OneClassDataset(cifar10_test, zero_class_labels=outlier, transform=transform, with_rotation=True, augmentation=False, normalization_transform=normalization_transform), range(0, (int)(len(inlier_dataset))))
-    validation_dataset = ConcatDataset([inlier_dataset, outlier_dataset])
+    if args.validation_mode:
+        inlier_dataset = OneClassDataset(cifar10_train, one_class_labels=inlier, transform=None, augmentation=False, with_rotation=args.use_rotated_data)
+        validation_inlier_dataset = Subset(Subset(inlier_dataset, range(0, (int)(.7 * len(inlier_dataset)))), range(0, 1000*4))
+        validation_outlier_dataset = Subset(OneClassDataset(cifar10_train, zero_class_labels=outlier, transform=None, augmentation=False, with_rotation=args.use_rotated_data), range(0, len(validation_inlier_dataset)))
+        validation_dataset = ConcatDataset([validation_inlier_dataset, validation_outlier_dataset])
+    else:
+        inlier_dataset = Subset(OneClassDataset(cifar10_test, one_class_labels=inlier, transform=None, augmentation=False, with_rotation=args.use_rotated_data), range(0, 1000*4))
+        outlier_dataset = Subset(OneClassDataset(cifar10_test, zero_class_labels=outlier, transform=None, augmentation=False, with_rotation=args.use_rotated_data), range(0, (int)(len(inlier_dataset))))
+        validation_dataset = ConcatDataset([inlier_dataset, outlier_dataset])
 
     with torch.no_grad():
         model.eval()
