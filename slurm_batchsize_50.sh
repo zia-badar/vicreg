@@ -3,7 +3,7 @@
 #SBATCH --ntasks=20
 #SBATCH --cpus-per-task=5
 # #SBATCH --mem-per-cpu=12G
-#SBATCH --output=output_64.log
+#SBATCH --output=output_batchsize_50.log
 #SBATCH --time=100:00:00
 #SBATCH --partition=gpu
 # #SBATCH --gres=gpu:a100:2
@@ -12,4 +12,4 @@
 #SBATCH --gres=gpu:tesla:1
 # #SBATCH --mem=256G
 #SBATCH --mail-user==zia.badar@campus.tu-berlin.de
-python main_vicreg.py --batch-size 64
+python main_vicreg.py --batch-size 50 --validation-mode
