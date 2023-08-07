@@ -3,7 +3,7 @@ __pycache__/
 exp*
 _exp/
 contras*
-vicreg*
+vicreg*/
 cifar*
 output_log
 
