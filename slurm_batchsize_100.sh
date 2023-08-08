@@ -1,7 +1,7 @@
 #!/bin/bash
 # #SBATCH --account=rsim
 #SBATCH --ntasks=20
-#SBATCH --cpus-per-task=5
+#SBATCH --cpus-per-task=1
 # #SBATCH --mem-per-cpu=12G
 #SBATCH --output=output_batchsize_100.log
 #SBATCH --time=100:00:00
